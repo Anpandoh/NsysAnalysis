@@ -58,10 +58,30 @@ class NSysAnalyzer:
         return self.cursor.fetchall()
     
     def fetch_all_kernels(self) -> List[Tuple]:
-        """Fetch all kernels ordered by start time"""
-        query = self.get_kernel_query() + " ORDER BY k.start ASC;"
+        """Fetch all kernels that start after the first memset kernel, ordered by start time"""
+        # First, find the start time of the first memset operation from the MEMSET table
+        memset_query = """
+            SELECT start FROM CUPTI_ACTIVITY_KIND_MEMSET 
+            ORDER BY start ASC LIMIT 1;
+        """
+        self.cursor.execute(memset_query)
+        memset_result = self.cursor.fetchone()
+        
+        if memset_result is None:
+            print("Warning: No memset operation found. Returning all kernels.")
+            query = self.get_kernel_query() + " ORDER BY k.start ASC;"
+            self.cursor.execute(query)
+            return self.cursor.fetchall()
+        
+        memset_start = memset_result[0]  # start time is the first column
+        print(f"Found memset operation starting at {memset_start}. Filtering kernels after this time.")
+        
+        # Fetch all kernels that start after the memset operation
+        query = self.get_kernel_query() + f" WHERE k.start > {memset_start} ORDER BY k.start ASC;"
         self.cursor.execute(query)
-        return self.cursor.fetchall()
+        kernels = self.cursor.fetchall()
+        print(f"Found {len(kernels)} kernels starting after memset")
+        return kernels
     
     def print_summary(self, item_type: str, items: List[Dict], duration_key: str = 'total_duration'):
         """Print summary statistics for a given item type"""
@@ -79,15 +99,16 @@ class NSysAnalyzer:
                 item_num = item.get(item_id_key, i+1)
                 print(f"  {i+1}. {item_type} {item_num}: {item[duration_key]/1e6:.2f} ms")
     
-    def get_metrics_for_kernels(self, kernels: List[Tuple], max_kernels: int = 500) -> Dict[int, float]:
+    def get_metrics_by_layer(self, kernels: List[Tuple], max_kernels: int = 900) -> Dict[int, float]:
         """Get GPU metrics for a list of kernels"""
         if not kernels:
             return {}
         
         # Limit kernels to avoid SQLite expression tree limit
         if len(kernels) > max_kernels:
-            kernels = kernels[max_kernels:]
-            print(f"  Processing last {max_kernels} kernels out of {len(kernels) + max_kernels} total kernels")
+            start_idx = (len(kernels) - max_kernels) // 2
+            kernels = kernels[start_idx:start_idx + max_kernels]
+            print(f"  Processing middle {max_kernels} kernels out of {len(kernels) + max_kernels} total kernels")
         
         # Build a list of (start_time, end_time) for the kernels
         kernel_data = [(kernel[2], kernel[3]) for kernel in kernels]  # start_time, end_time
@@ -131,8 +152,7 @@ class NSysAnalyzer:
         
         return layer_metrics
     
-    def get_metrics_for_kernels_k(self, kernels: List[Tuple], batch_size: int = 100, 
-                                       sample_fraction: float = 0.2) -> Dict[int, float]:
+    def get_metrics_by_kernel(self, kernels: List[Tuple], batch_size: int = 100) -> Dict[int, float]:
         """Get GPU metrics for kernels using batched processing with sampling"""
         if not kernels:
             return {}
@@ -146,17 +166,9 @@ class NSysAnalyzer:
         
         # Calculate total number of batches and only process a fraction of them
         total_batches = (len(kernel_data) + batch_size - 1) // batch_size
-        batches_to_process = max(1, int(total_batches * sample_fraction))
-        
-        print(f"Processing {batches_to_process} batches out of {total_batches} total batches ({sample_fraction*100:.0f}% sampling)")
-        
-        # Process only a subset of batches with even spacing
-        batch_indices = []
-        if batches_to_process > 0:
-            step = total_batches / batches_to_process
-            batch_indices = [int(i * step) * batch_size for i in range(batches_to_process)]
-        
-        for batch_start_idx in batch_indices:
+
+        print(f"Processing {total_batches} batches")
+        for batch_start_idx in range(total_batches):
             batch_end_idx = min(batch_start_idx + batch_size, len(kernel_data))
             batch = kernel_data[batch_start_idx:batch_end_idx]
             

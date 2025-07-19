@@ -1,16 +1,16 @@
-from nsys_analysis.nsys_utils import NSysAnalyzer
+from nsys_utils import NSysAnalyzer
 
 # Path to the SQLite database
-# db_path = "../A100/SFNO_NSYS/gigaio80/sfno_384.sqlite"
-db_path = "../A100/ACE_NSYS/ACE2_400_50.sqlite"
+db_path = "../A100/SFNO_NSYS/gigaio80/sfno_2048.sqlite"
+# db_path = "../A100/ACE_NSYS/ACE2_400_50.sqlite"
 # Initialize the analyzer
 analyzer = NSysAnalyzer(db_path)
 analyzer.connect()
 
 # Fetch all kernels once for efficient grouping
-print("Fetching all kernels for analysis...")
+print("Fetching all kernels for analysis after Memset...")
 all_kernels = analyzer.fetch_all_kernels()
-print(f"Fetched {len(all_kernels)} total kernels")
+print(f"Fetched {len(all_kernels)} total kernels ordered by start time")
 
 # Create a mapping of start times to kernel indices for quick lookup
 kernel_by_start = {kernel[2]: (i, kernel) for i, kernel in enumerate(all_kernels)}
@@ -22,6 +22,12 @@ nchw_kernels = analyzer.fetch_kernels_by_pattern("NCHW")
 norm_layers = []
 for i, nchw_kernel in enumerate(nchw_kernels):
     nchw_start_time = nchw_kernel[2]
+    
+    # Check if this kernel exists in our filtered kernel list
+    if nchw_start_time not in kernel_by_start:
+        print(f"Warning: NCHW kernel with start time {nchw_start_time} not found in filtered kernel list. Skipping.")
+        continue
+    
     nchw_idx = kernel_by_start[nchw_start_time][0]
     
     # Get 1 kernel before (if available)
@@ -40,11 +46,7 @@ for i, nchw_kernel in enumerate(nchw_kernels):
     norm_layers.append(norm_layer)
 
 analyzer.print_summary("Norm Layer", norm_layers)
-if len(norm_layers) >= 10:
-    print(f"Norm Layer 10 kernel names:")
-    for k in norm_layers[9]['kernels']:
-        print(k[0])
-        print("--------------------------------")
+
 
 # Find fft_r2c kernels (we cant simply do the next 10 kernels after the norm layer because there are 2 norm layers within the SFNO block)
 fft_r2c_kernels = analyzer.fetch_kernels_by_pattern("fft_r2c")
@@ -53,6 +55,12 @@ fft_r2c_kernels = analyzer.fetch_kernels_by_pattern("fft_r2c")
 realsht_layers = []
 for i, fft_r2c_kernel in enumerate(fft_r2c_kernels):
     fft_r2c_start_time = fft_r2c_kernel[2]
+    
+    # Check if this kernel exists in our filtered kernel list
+    if fft_r2c_start_time not in kernel_by_start:
+        print(f"Warning: fft_r2c kernel with start time {fft_r2c_start_time} not found in filtered kernel list. Skipping.")
+        continue
+    
     fft_r2c_idx = kernel_by_start[fft_r2c_start_time][0]
     
     # Get 10 kernels after fft_r2c (if available)
@@ -71,12 +79,7 @@ for i, fft_r2c_kernel in enumerate(fft_r2c_kernels):
     realsht_layers.append(realsht_layer)
 
 analyzer.print_summary("RealSHT Layer", realsht_layers)
-if len(realsht_layers) >= 10:
-    print(f"RealSHT Layer 10 kernel names (including fft_r2c):")
-    print("fft_r2c_kernel:", realsht_layers[9]['fft_r2c_kernel'][0])
-    for k in realsht_layers[9]['kernels']:
-        print(k[0])
-        print("--------------------------------")
+
 
 
 # Group the next 3 kernels after each RealSHT layer as "DHconv_layer"
@@ -85,7 +88,14 @@ for i, realsht_layer in enumerate(realsht_layers):
     # Find the last kernel of the RealSHT layer
     if realsht_layer['kernels_after']:
         last_realsht_kernel = realsht_layer['kernels_after'][-1]
-        last_realsht_idx = kernel_by_start[last_realsht_kernel[2]][0]
+        last_realsht_start_time = last_realsht_kernel[2]
+        
+        # Check if this kernel exists in our filtered kernel list
+        if last_realsht_start_time not in kernel_by_start:
+            print(f"Warning: Last RealSHT kernel with start time {last_realsht_start_time} not found in filtered kernel list. Skipping DHconv layer.")
+            continue
+        
+        last_realsht_idx = kernel_by_start[last_realsht_start_time][0]
         
         # Get 3 kernels after the RealSHT layer (if available)
         kernels_after_realsht = []
@@ -103,11 +113,7 @@ for i, realsht_layer in enumerate(realsht_layers):
         dhconv_layers.append(dhconv_layer)
 
 analyzer.print_summary("DHconv Layer", dhconv_layers)
-if len(dhconv_layers) >= 10:
-    print(f"DHconv Layer 10 kernel names:")
-    for k in dhconv_layers[9]['kernels']:
-        print(k[0])
-        print("--------------------------------")
+
 
 
 # Group the next 8 kernels after each DHconv layer as "InverseSHT"
@@ -116,7 +122,14 @@ for i, dhconv_layer in enumerate(dhconv_layers):
     # Find the last kernel of the DHconv layer
     if dhconv_layer['kernels_after_realsht']:
         last_dhconv_kernel = dhconv_layer['kernels_after_realsht'][-1]
-        last_dhconv_idx = kernel_by_start[last_dhconv_kernel[2]][0]
+        last_dhconv_start_time = last_dhconv_kernel[2]
+        
+        # Check if this kernel exists in our filtered kernel list
+        if last_dhconv_start_time not in kernel_by_start:
+            print(f"Warning: Last DHconv kernel with start time {last_dhconv_start_time} not found in filtered kernel list. Skipping InverseSHT layer.")
+            continue
+        
+        last_dhconv_idx = kernel_by_start[last_dhconv_start_time][0]
         
         # Get 8 kernels after the DHconv layer (if available)
         kernels_after_dhconv = []
@@ -135,11 +148,7 @@ for i, dhconv_layer in enumerate(dhconv_layers):
         inversesht_layers.append(inversesht_layer)
 
 analyzer.print_summary("InverseSHT Layer", inversesht_layers)
-if len(inversesht_layers) >= 10:
-    print(f"InverseSHT Layer 10 kernel names:")
-    for k in inversesht_layers[9]['kernels']:
-        print(k[0])
-        print("--------------------------------")
+
 
 # Group the next 3 kernels after each InverseSHT layer as "Inner_Skip_Layers"
 inner_skip_layers = []
@@ -147,7 +156,14 @@ for i, inversesht_layer in enumerate(inversesht_layers):
     # Find the last kernel of the InverseSHT layer
     if inversesht_layer['kernels_after_dhconv']:
         last_inversesht_kernel = inversesht_layer['kernels_after_dhconv'][-1]
-        last_inversesht_idx = kernel_by_start[last_inversesht_kernel[2]][0]
+        last_inversesht_start_time = last_inversesht_kernel[2]
+        
+        # Check if this kernel exists in our filtered kernel list
+        if last_inversesht_start_time not in kernel_by_start:
+            print(f"Warning: Last InverseSHT kernel with start time {last_inversesht_start_time} not found in filtered kernel list. Skipping Inner Skip layer.")
+            continue
+        
+        last_inversesht_idx = kernel_by_start[last_inversesht_start_time][0]
         
         # Get 3 kernels after the InverseSHT layer (if available)
         kernels_after_inversesht = []
@@ -167,11 +183,7 @@ for i, inversesht_layer in enumerate(inversesht_layers):
         inner_skip_layers.append(inner_skip_layer)
 
 analyzer.print_summary("Inner Skip Layer", inner_skip_layers)
-if len(inner_skip_layers) >= 10:
-    print(f"Inner Skip Layer 10 kernel names:")
-    for k in inner_skip_layers[9]['kernels']:
-        print(k[0])
-        print("--------------------------------")
+
 
 # Group the next kernel after each Inner Skip layer as "Activation_Layers"
 activation_layers = []
@@ -179,7 +191,14 @@ for i, inner_skip_layer in enumerate(inner_skip_layers):
     # Find the last kernel of the Inner Skip layer
     if inner_skip_layer['kernels_after_inversesht']:
         last_inner_skip_kernel = inner_skip_layer['kernels_after_inversesht'][-1]
-        last_inner_skip_idx = kernel_by_start[last_inner_skip_kernel[2]][0]
+        last_inner_skip_start_time = last_inner_skip_kernel[2]
+        
+        # Check if this kernel exists in our filtered kernel list
+        if last_inner_skip_start_time not in kernel_by_start:
+            print(f"Warning: Last Inner Skip kernel with start time {last_inner_skip_start_time} not found in filtered kernel list. Skipping Activation layer.")
+            continue
+        
+        last_inner_skip_idx = kernel_by_start[last_inner_skip_start_time][0]
         
         # Get 1 kernel after the Inner Skip layer (if available)
         kernel_after_inner_skip = None
@@ -200,11 +219,7 @@ for i, inner_skip_layer in enumerate(inner_skip_layers):
         activation_layers.append(activation_layer)
 
 analyzer.print_summary("Activation Layer", activation_layers)
-if len(activation_layers) >= 10:
-    print(f"Activation Layer 10 kernel names:")
-    for k in activation_layers[9]['kernels']:
-        print(k[0])
-        print("--------------------------------")
+
 
 # Skip 2 kernels after each Activation layer, then group the next 5 kernels as "MLP_layer"
 mlp_layers = []
@@ -212,7 +227,14 @@ for i, activation_layer in enumerate(activation_layers):
     # Find the last kernel of the Activation layer
     if activation_layer['kernel_after_inner_skip']:
         last_activation_kernel = activation_layer['kernel_after_inner_skip']
-        last_activation_idx = kernel_by_start[last_activation_kernel[2]][0]
+        last_activation_start_time = last_activation_kernel[2]
+        
+        # Check if this kernel exists in our filtered kernel list
+        if last_activation_start_time not in kernel_by_start:
+            print(f"Warning: Last Activation kernel with start time {last_activation_start_time} not found in filtered kernel list. Skipping MLP layer.")
+            continue
+        
+        last_activation_idx = kernel_by_start[last_activation_start_time][0]
         
         # Skip 2 kernels after the Activation layer, then get the next 5 kernels
         skip_start_idx = last_activation_idx + 1
@@ -240,11 +262,7 @@ for i, activation_layer in enumerate(activation_layers):
         mlp_layers.append(mlp_layer)
 
 analyzer.print_summary("MLP Layer", mlp_layers)
-if len(mlp_layers) >= 10:
-    print(f"MLP Layer 10 kernel names:")
-    for k in mlp_layers[9]['kernels']:
-        print(k[0])
-        print("--------------------------------")
+
 
 # Group the next kernel after each MLP layer as "Outer_skip_layer"
 outer_skip_layers = []
@@ -252,7 +270,14 @@ for i, mlp_layer in enumerate(mlp_layers):
     # Find the last kernel of the MLP layer
     if mlp_layer['kernels_for_mlp']:
         last_mlp_kernel = mlp_layer['kernels_for_mlp'][-1]
-        last_mlp_idx = kernel_by_start[last_mlp_kernel[2]][0]
+        last_mlp_start_time = last_mlp_kernel[2]
+        
+        # Check if this kernel exists in our filtered kernel list
+        if last_mlp_start_time not in kernel_by_start:
+            print(f"Warning: Last MLP kernel with start time {last_mlp_start_time} not found in filtered kernel list. Skipping Outer Skip layer.")
+            continue
+        
+        last_mlp_idx = kernel_by_start[last_mlp_start_time][0]
         
         # Get 1 kernel after the MLP layer (if available)
         kernel_after_mlp = None
@@ -275,11 +300,7 @@ for i, mlp_layer in enumerate(mlp_layers):
         outer_skip_layers.append(outer_skip_layer)
 
 analyzer.print_summary("Outer Skip Layer", outer_skip_layers)
-if len(outer_skip_layers) >= 10:
-    print(f"Outer Skip Layer 10 kernel names:")
-    for k in outer_skip_layers[9]['kernels']:
-        print(k[0])
-        print("--------------------------------")
+
 
 #--------------------------------Generate Plots--------------------------------#
 # Now analyze GPU metrics for all layers
@@ -320,7 +341,7 @@ if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_G
         print(f"  Processing {len(all_kernels_for_type)} total kernels for {layer_type_name}")
         
         # Get metrics for this layer type
-        layer_type_metrics = analyzer.get_metrics_for_kernels(all_kernels_for_type)
+        layer_type_metrics = analyzer.get_metrics_by_layer(all_kernels_for_type)
         metrics_by_layer_type[layer_type_name] = layer_type_metrics
         print(f"  Processed {len(layer_type_metrics)} metrics for {layer_type_name}")
     

@@ -1,4 +1,4 @@
-from nsys_analysis.nsys_utils import NSysAnalyzer
+from nsys_utils import NSysAnalyzer
 
 # Path to the SQLite database
 db_path = "../A100/SFNO_NSYS/gigaio80/sfno_2048.sqlite"
@@ -19,11 +19,13 @@ columns = analyzer.cursor.fetchall()
 column_names = [column[1] for column in columns]
 print("Column names in CUPTI_ACTIVITY_KIND_KERNEL:", column_names)
 
+print("")
+print("--------------------------------")
+print("")
+
 # Fetch all kernels
 all_kernels = analyzer.fetch_all_kernels()
-# Restrict to back 3/4 of kernels to avoid the startup overhead
-all_kernels = all_kernels[-(len(all_kernels) * 3 // 4):] if len(all_kernels) > 0 else all_kernels
-print(f"Fetched {len(all_kernels)} total kernels (last 500)")
+print(f"Fetched {len(all_kernels)} total kernels")
 
 # Group all kernels by type
 kernel_types = analyzer.group_kernels_by_type(all_kernels)
@@ -73,12 +75,12 @@ if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_G
     for i, (kernel_type, total_duration, avg_duration, kernels) in enumerate(top10_types):
         print(f"\nProcessing kernel type {i}: {kernel_type}")
         # Only use the middle 750 kernels for metrics analysis
-        # if len(kernels) > 750:
-        #     start_idx = (len(kernels) - 750) // 2
-        #     kernels_for_metrics = kernels[start_idx:start_idx + 750]
-        # else:
-        kernels_for_metrics = kernels
-        kernel_avg_metrics = analyzer.get_metrics_for_kernels_k(kernels_for_metrics, batch_size=500, sample_fraction=1)
+        if len(kernels) > 2000:
+            start_idx = (len(kernels) - 2000) // 2
+            kernels_for_metrics = kernels[start_idx:start_idx + 2000]
+        else:
+            kernels_for_metrics = kernels
+        kernel_avg_metrics = analyzer.get_metrics_by_kernel(kernels_for_metrics, batch_size=500)
         metrics_by_kernel[kernel_type] = kernel_avg_metrics
 
     print("\n===== METRICS BY KERNEL TYPE (TOP 10 BY TOTAL DURATION) =====")
