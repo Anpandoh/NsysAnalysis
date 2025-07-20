@@ -290,6 +290,136 @@ class NSysAnalyzer:
                 filename = metric_name.replace('[', '').replace(']', '').replace(' ', '_').lower()
                 print(f"- {filename}.png - {metric_name}")
     
+    def create_runtime_visualizations(self, runtime_data: Dict[str, float], 
+                                    prefix: str = "analysis", title_prefix: str = "", total_runtime: float = None):
+        """Create runtime visualizations for kernel types or layers"""
+        if not runtime_data:
+            return
+        
+        # Create output directory based on prefix
+        base_name = re.search(r"([^/]+?)(?:\.[^.]+)?$", self.db_path).group(1)
+        output_dir = f"{base_name}_{prefix}_graphs"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Sort data by duration (descending)
+        sorted_data = sorted(runtime_data.items(), key=lambda x: x[1], reverse=True)
+        item_types, durations = zip(*sorted_data)
+        
+        # Convert durations to milliseconds
+        durations_ms = [d / 1e6 for d in durations]
+        
+        # Create the runtime bar chart
+        plt.figure(figsize=(14, 8))
+        
+        # Create bar chart
+        x = np.arange(len(item_types))
+        bars = plt.bar(x, durations_ms, width=0.6, alpha=0.7, color='lightcoral')
+        
+        # Add labels and title
+        plt.xlabel('Item Type', fontsize=12)
+        plt.ylabel('Total Duration (ms)', fontsize=12)
+        plt.title(f'{title_prefix}Total Runtime by Item Type', fontsize=14)
+        
+        # Improve x-axis labels to avoid cutoff
+        x_labels = []
+        for item_type in item_types:
+            if len(item_type) > 30 and 'sm80_xmma' in item_type:
+                # Shorten cudnn kernels
+                parts = item_type.split('_')
+                if len(parts) > 5:
+                    x_labels.append(f"{parts[0]}_{parts[1]}_cudnn")
+            elif 'regular_fft' in item_type:
+                # Shorten FFT kernels
+                x_labels.append(item_type.split('<')[0])
+            elif len(item_type) > 25:
+                # Shorten other long names
+                x_labels.append(item_type[:25] + "...")
+            else:
+                x_labels.append(item_type)
+        
+        # Adjust x-axis ticks and labels
+        plt.xticks(x, x_labels, rotation=45, ha='right')
+        
+        # Increase bottom margin to allow space for rotated labels
+        plt.subplots_adjust(bottom=0.25)
+        
+        # Add value labels on top of bars
+        for i, v in enumerate(durations_ms):
+            plt.text(i, v + max(durations_ms) * 0.01, f'{v:.1f}ms', ha='center', fontsize=9)
+        
+        # Add grid for better readability
+        plt.grid(axis='y', alpha=0.3)
+        
+        # Adjust layout and save
+        plt.tight_layout()
+        
+        # Save the bar chart
+        filepath = os.path.join(output_dir, 'total_runtime.png')
+        plt.savefig(filepath, bbox_inches='tight', dpi=300)
+        plt.close()
+        
+        # Create pie chart for runtime percentages
+        plt.figure(figsize=(12, 10))
+        
+        # Calculate percentages - use total_runtime if provided, otherwise sum of durations
+        if total_runtime is not None:
+            percentages = [(d / total_runtime) * 100 for d in durations]
+        else:
+            total_runtime = sum(durations)
+            percentages = [(d / total_runtime) * 100 for d in durations]
+        
+        # Create pie chart
+        colors = plt.cm.Set3(np.linspace(0, 1, len(item_types)))
+        wedges, texts, autotexts = plt.pie(percentages, labels=None, autopct='%1.1f%%', 
+                                          startangle=90, colors=colors, textprops={'fontsize': 10})
+        
+        # Add title
+        plt.title(f'{title_prefix}Runtime Distribution (Percentage)', fontsize=14, pad=20)
+        
+        # Create legend with shortened labels
+        legend_labels = []
+        for item_type in item_types:
+            if len(item_type) > 30 and 'sm80_xmma' in item_type:
+                # Shorten cudnn kernels
+                parts = item_type.split('_')
+                if len(parts) > 5:
+                    legend_labels.append(f"{parts[0]}_{parts[1]}_cudnn")
+            elif 'regular_fft' in item_type:
+                # Shorten FFT kernels
+                legend_labels.append(item_type.split('<')[0])
+            elif len(item_type) > 25:
+                # Shorten other long names
+                legend_labels.append(item_type[:25] + "...")
+            else:
+                legend_labels.append(item_type)
+        
+        # Add legend
+        plt.legend(wedges, legend_labels, title="Item Types", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+        
+        # Ensure equal aspect ratio for circular pie
+        plt.axis('equal')
+        
+        # Adjust layout to accommodate legend
+        plt.tight_layout()
+        
+        # Save the pie chart
+        pie_filepath = os.path.join(output_dir, 'runtime_percentage.png')
+        plt.savefig(pie_filepath, bbox_inches='tight', dpi=300)
+        plt.close()
+        
+        print(f"\nRuntime visualizations saved in '{output_dir}/' folder:")
+        print(f"- total_runtime.png - Total Runtime by Item Type (Bar Chart)")
+        print(f"- runtime_percentage.png - Runtime Distribution (Pie Chart)")
+        
+        # Print summary
+        print(f"\n===== RUNTIME SUMMARY =====")
+        print(f"Total Runtime: {total_runtime/1e6:.2f} ms")
+        print(f"Number of Items: {len(runtime_data)}")
+        print(f"\nTop 5 Longest Items:")
+        for i, (item_type, duration) in enumerate(sorted_data[:5]):
+            percentage = (duration / total_runtime) * 100
+            print(f"  {i+1}. {item_type}: {duration/1e6:.2f} ms ({percentage:.1f}%)")
+    
     def print_metrics_summary(self, metrics_data: Dict[str, Dict[int, float]], title: str = "METRICS SUMMARY"):
         """Print a summary table of metrics"""
         print(f"\n===== {title} =====")
@@ -306,12 +436,23 @@ class NSysAnalyzer:
         elif "cutlass::Kernel2<cutlass_80_tensorop_s1688gemm_128x128" in kernel_name:
             return "cutlass_gemm_128x128"
         
+        # Check for elementwise kernels
+        EK_match = re.search(r'void at::native::elementwise_kernel.*?gpu_kernel_impl_nocast<at::native::([A-Za-z_][A-Za-z0-9_]*)', kernel_name)
+        if EK_match:
+            return f"EK_CUDAFunctor_{EK_match.group(1)}"
+            
+        # Check for vectorized elementwise kernels
+        VEK_match = re.search(r'vectorized_elementwise_kernel.*?([A-Za-z]+(?:Functor|Impl|cuda|CUDA)[^,<>]*)', kernel_name)
+        if VEK_match:
+            return f"VEK_{VEK_match.group(1)}"
+        
         # Extract patterns like ampere_h16816gemm_128x128_ldg8_stages_64x3_tn
         match = re.search(r'(ampere_[^()\s]+)', kernel_name)
         if match:
             return match.group(1)
+            
         # Fall back to first part of the name if pattern not found
-        return kernel_name.split('(')[0].strip()
+        return kernel_name.replace('void ', '').split('<')[0].strip()
     
     def group_kernels_by_type(self, kernels: List[Tuple]) -> Dict[str, List[Tuple]]:
         """Group kernels by their extracted type"""

@@ -301,6 +301,27 @@ for i, mlp_layer in enumerate(mlp_layers):
 
 analyzer.print_summary("Outer Skip Layer", outer_skip_layers)
 
+# Create runtime visualization for all layer types
+print("\n===== RUNTIME VISUALIZATION FOR LAYERS =====")
+layer_runtime_data = {}
+if norm_layers:
+    layer_runtime_data["Norm Layer"] = sum(layer['total_duration'] for layer in norm_layers)
+if realsht_layers:
+    layer_runtime_data["RealSHT Layer"] = sum(layer['total_duration'] for layer in realsht_layers)
+if dhconv_layers:
+    layer_runtime_data["DHconv Layer"] = sum(layer['total_duration'] for layer in dhconv_layers)
+if inversesht_layers:
+    layer_runtime_data["InverseSHT Layer"] = sum(layer['total_duration'] for layer in inversesht_layers)
+if inner_skip_layers:
+    layer_runtime_data["Inner Skip Layer"] = sum(layer['total_duration'] for layer in inner_skip_layers)
+if activation_layers:
+    layer_runtime_data["Activation Layer"] = sum(layer['total_duration'] for layer in activation_layers)
+if mlp_layers:
+    layer_runtime_data["MLP Layer"] = sum(layer['total_duration'] for layer in mlp_layers)
+if outer_skip_layers:
+    layer_runtime_data["Outer Skip Layer"] = sum(layer['total_duration'] for layer in outer_skip_layers)
+
+analyzer.create_runtime_visualizations(layer_runtime_data, prefix="layer", title_prefix="Layer ")
 
 #--------------------------------Generate Plots--------------------------------#
 # Now analyze GPU metrics for all layers

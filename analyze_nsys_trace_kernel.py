@@ -45,7 +45,35 @@ print(f"Top 10 unique kernel types by total duration:")
 for i, (kernel_type, total_duration, avg_duration, kernels) in enumerate(top10_types):
     print(f"{i+1}. {kernel_type} | Total Duration: {total_duration/1e6:.2f} ms | Avg Duration: {avg_duration/1e6:.2f} ms | Calls: {len(kernels)} | Example Grid: ({kernels[0][8]},{kernels[0][9]},{kernels[0][10]}) | Block: ({kernels[0][11]},{kernels[0][12]},{kernels[0][13]})")
 
-print(f"\n===== SM ISSUE ANALYSIS FOR TOP 10 KERNEL TYPES (BY TOTAL DURATION) =====")
+# Calculate total runtime of all kernels
+total_all_kernels_runtime = sum(kernel[4] for kernel in all_kernels)
+
+# Create runtime data including "Other Kernels" for pie chart
+runtime_data = {kernel_type: total_duration for kernel_type, total_duration, avg_duration, kernels in top10_types}
+
+# Calculate runtime of kernels not in top 10
+top10_kernels_runtime = sum(total_duration for kernel_type, total_duration, avg_duration, kernels in top10_types)
+other_kernels_runtime = total_all_kernels_runtime - top10_kernels_runtime
+
+# Debug information
+print(f"\n===== RUNTIME CALCULATION DEBUG =====")
+print(f"Total runtime of all kernels: {total_all_kernels_runtime/1e6:.2f} ms")
+print(f"Total runtime of top 10 kernel types: {top10_kernels_runtime/1e6:.2f} ms")
+print(f"Other kernels runtime: {other_kernels_runtime/1e6:.2f} ms")
+print(f"Percentage accounted for by top 10: {(top10_kernels_runtime/total_all_kernels_runtime)*100:.1f}%")
+print(f"Percentage for other kernels: {(other_kernels_runtime/total_all_kernels_runtime)*100:.1f}%")
+
+# Add "Other Kernels" to runtime data if there are kernels not in top 10
+if other_kernels_runtime > 0:
+    runtime_data["Other Kernels"] = other_kernels_runtime
+    print(f"Added 'Other Kernels' with runtime: {other_kernels_runtime/1e6:.2f} ms")
+else:
+    print("No 'Other Kernels' category needed - top 10 account for 100% of runtime")
+
+# Pass the total runtime for accurate percentage calculation
+analyzer.create_runtime_visualizations(runtime_data, prefix="kernel", title_prefix="Top 10 Kernel Type (Total Duration) ", total_runtime=total_all_kernels_runtime)
+
+print("\n===== SM ISSUE ANALYSIS FOR TOP 10 KERNEL TYPES (BY TOTAL DURATION) =====")
 for i, (kernel_type, total_duration, avg_duration, kernels) in enumerate(top10_types):
     print(f"{i+1}. {kernel_type}")
     print(f"   Calls: {len(kernels)}")
