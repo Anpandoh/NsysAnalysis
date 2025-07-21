@@ -5,6 +5,7 @@ import re
 import numpy as np
 import os
 from typing import Dict, List, Tuple
+import json
 
 
 class NSysAnalyzer:
@@ -463,3 +464,43 @@ class NSysAnalyzer:
                 kernel_types[kernel_type] = []
             kernel_types[kernel_type].append(kernel)
         return kernel_types 
+
+    def export_kernel_summary_to_json(self, json_path, total_all_kernels_runtime, top10_types, metrics_by_kernel, other_kernels_runtime, runtime_data):
+        """Export kernel summary statistics and metrics to a JSON file for later comparison."""
+        trace_summary = {
+            "trace_id": os.path.basename(self.db_path),
+            "total_all_kernels_runtime": total_all_kernels_runtime,
+            "top10_kernel_types": [
+                {
+                    "kernel_type": kernel_type,
+                    "total_duration": total_duration,
+                    "avg_duration": avg_duration,
+                    "num_calls": len(kernels),
+                    "example_grid": (kernels[0][8], kernels[0][9], kernels[0][10]) if kernels else None,
+                    "example_block": (kernels[0][11], kernels[0][12], kernels[0][13]) if kernels else None,
+                    "metrics": metrics_by_kernel.get(kernel_type, {})
+                }
+                for kernel_type, total_duration, avg_duration, kernels in top10_types
+            ],
+            "other_kernels_runtime": other_kernels_runtime,
+            "runtime_data": runtime_data,
+        }
+        with open(json_path, "w") as f:
+            json.dump(trace_summary, f, indent=2)
+        print(f"Saved kernel summary to {json_path}")
+
+    def export_layer_summary_to_json(self, json_path, layer_runtime_data, metrics_by_layer_type=None):
+        """Export layer summary statistics and metrics to a JSON file for later comparison."""
+        trace_summary = {
+            "trace_id": os.path.basename(self.db_path),
+            "layer_runtime_data": layer_runtime_data,
+        }
+        if metrics_by_layer_type is not None:
+            # Convert numpy types to float for JSON serialization
+            metrics_by_layer_type_clean = {}
+            for layer_type, metrics in metrics_by_layer_type.items():
+                metrics_by_layer_type_clean[layer_type] = {str(k): float(v) for k, v in metrics.items()}
+            trace_summary["metrics_by_layer_type"] = metrics_by_layer_type_clean
+        with open(json_path, "w") as f:
+            json.dump(trace_summary, f, indent=2)
+        print(f"Saved layer summary to {json_path}") 

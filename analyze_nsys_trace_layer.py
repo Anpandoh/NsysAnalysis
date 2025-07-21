@@ -1,7 +1,7 @@
 from nsys_utils import NSysAnalyzer
 
 # Path to the SQLite database
-db_path = "../A100/SFNO_NSYS/gigaio80/sfno_2048.sqlite"
+db_path = "../A100/SFNO_NSYS/gigaio80/sfno_1024.sqlite"
 # db_path = "../A100/ACE_NSYS/ACE2_400_50.sqlite"
 # Initialize the analyzer
 analyzer = NSysAnalyzer(db_path)
@@ -325,6 +325,7 @@ analyzer.create_runtime_visualizations(layer_runtime_data, prefix="layer", title
 
 #--------------------------------Generate Plots--------------------------------#
 # Now analyze GPU metrics for all layers
+metrics_by_layer_type = {}
 if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_GPU_METRICS"):
     print("\n===== GPU METRICS ANALYSIS FOR LAYERS =====")
     
@@ -341,8 +342,6 @@ if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_G
     ]
     
     # Get metrics for each layer type
-    metrics_by_layer_type = {}
-    
     for layer_type_name, layers in all_layer_types:
         if not layers:
             continue
@@ -373,3 +372,25 @@ if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_G
 
 # Close the database connection
 analyzer.disconnect()
+
+# ---- Export summary to unified JSON for later comparison ----
+import os, json
+json_path = "all_traces_summary.json"
+db_base = os.path.splitext(os.path.basename(db_path))[0]
+# Prepare the layer summary dict
+layer_summary = {
+    'layer_runtime_data': layer_runtime_data,
+    'metrics_by_layer_type': {k: {str(m): float(v) for m, v in metrics.items()} for k, metrics in metrics_by_layer_type.items()}
+}
+# Load or create the unified JSON
+if os.path.exists(json_path):
+    with open(json_path, 'r') as f:
+        all_data = json.load(f)
+else:
+    all_data = {}
+if db_base not in all_data:
+    all_data[db_base] = {}
+all_data[db_base]['layer'] = layer_summary
+with open(json_path, 'w') as f:
+    json.dump(all_data, f, indent=2)
+print(f"Saved layer summary for {db_base} to {json_path}")

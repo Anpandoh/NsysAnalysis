@@ -1,7 +1,8 @@
 from nsys_utils import NSysAnalyzer
 
 # Path to the SQLite database
-db_path = "../A100/SFNO_NSYS/gigaio80/sfno_2048.sqlite"
+db_path = "../A100/SFNO_NSYS/gigaio80/sfno_1024.sqlite"
+# db_path = "../A100/SFNO_NSYS/gigaio80/sfno_2048.sqlite"
 # db_path = "../A100/ACE_NSYS/ACE2_400_50.sqlite"
 
 # Initialize the analyzer
@@ -97,9 +98,9 @@ if analyzer.table_exists("TARGET_INFO_GPU_METRICS"):
     print(target_info_column_names)
 
 # Extract relevant metrics for the top 10 kernel types
+metrics_by_kernel = {}
 if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_GPU_METRICS"):
     print("\n===== METRICS FOR TOP 10 KERNEL TYPES (BY TOTAL DURATION) =====")
-    metrics_by_kernel = {}
     for i, (kernel_type, total_duration, avg_duration, kernels) in enumerate(top10_types):
         print(f"\nProcessing kernel type {i}: {kernel_type}")
         # Only use the middle 750 kernels for metrics analysis
@@ -126,4 +127,37 @@ if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_G
 
 # Close the connection when done
 analyzer.disconnect()
+
+# ---- Export summary to unified JSON for later comparison ----
+import os, json
+json_path = "all_traces_summary.json"
+db_base = os.path.splitext(os.path.basename(db_path))[0]
+# Prepare the kernel summary dict
+kernel_summary = {
+    'total_all_kernels_runtime': total_all_kernels_runtime,
+    'top10_kernel_types': [
+        {
+            'kernel_type': kernel_type,
+            'total_duration': total_duration,
+            'avg_duration': avg_duration,
+            'num_calls': len(kernels),
+            'metrics': metrics_by_kernel.get(kernel_type, {})
+        }
+        for kernel_type, total_duration, avg_duration, kernels in top10_types
+    ],
+    'other_kernels_runtime': other_kernels_runtime,
+    'runtime_data': runtime_data,
+}
+# Load or create the unified JSON
+if os.path.exists(json_path):
+    with open(json_path, 'r') as f:
+        all_data = json.load(f)
+else:
+    all_data = {}
+if db_base not in all_data:
+    all_data[db_base] = {}
+all_data[db_base]['kernel'] = kernel_summary
+with open(json_path, 'w') as f:
+    json.dump(all_data, f, indent=2)
+print(f"Saved kernel summary for {db_base} to {json_path}")
             
