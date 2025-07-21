@@ -121,4 +121,55 @@ for metric in metric_names:
     # Save plot
     filename = f"layers_{metric_shortnames[metric]}.png"
     plt.savefig(os.path.join(output_dir, filename), bbox_inches='tight', dpi=300)
-    plt.close() 
+    plt.close()
+
+# --- 3. Total Runtime for Each Kernel Type Over Traces ---
+plt.figure(figsize=(12, 7))
+for kernel_type in all_top_kernels:
+    y = []
+    for trace in trace_names:
+        kernel_data = all_data[trace].get('kernel', {})
+        found = False
+        for k in kernel_data.get('top10_kernel_types', []):
+            if k['kernel_type'] == kernel_type:
+                val = k.get('total_duration')
+                y.append(val / 1e6 if val is not None else np.nan)  # Convert to ms
+                found = True
+                break
+        if not found:
+            y.append(np.nan)
+    plt.plot(trace_names, y, marker='o', label=kernel_type)
+plt.title("Total Runtime for Top Kernels Across Traces")
+plt.xlabel("Trace (Model Size)")
+plt.ylabel("Total Duration (ms)")
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+filename = "kernels_total_runtime.png"
+plt.savefig(os.path.join(output_dir, filename), bbox_inches='tight', dpi=300)
+plt.close()
+
+# --- 4. Total Runtime for Each Layer Type Over Traces ---
+plt.figure(figsize=(12, 7))
+# Get all layer types present
+all_layer_types = set()
+for trace in trace_names:
+    layer_data = all_data[trace].get('layer', {})
+    layer_runtime_data = layer_data.get('layer_runtime_data', {})
+    all_layer_types.update(layer_runtime_data.keys())
+all_layer_types = sorted(all_layer_types)
+for layer_type in all_layer_types:
+    y = []
+    for trace in trace_names:
+        layer_data = all_data[trace].get('layer', {})
+        layer_runtime_data = layer_data.get('layer_runtime_data', {})
+        val = layer_runtime_data.get(layer_type)
+        y.append(val / 1e6 if val is not None else np.nan)  # Convert to ms
+    plt.plot(trace_names, y, marker='o', label=layer_type)
+plt.title("Total Runtime for Layers Across Traces")
+plt.xlabel("Trace (Model Size)")
+plt.ylabel("Total Duration (ms)")
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+filename = "layers_total_runtime.png"
+plt.savefig(os.path.join(output_dir, filename), bbox_inches='tight', dpi=300)
+plt.close() 

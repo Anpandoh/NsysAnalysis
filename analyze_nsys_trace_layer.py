@@ -1,7 +1,7 @@
 from nsys_utils import NSysAnalyzer
 
 # Path to the SQLite database
-db_path = "../A100/SFNO_NSYS/gigaio80/sfno_1024.sqlite"
+db_path = "../A100/SFNO_NSYS/gigaio80/sfno_2048.sqlite"
 # db_path = "../A100/ACE_NSYS/ACE2_400_50.sqlite"
 # Initialize the analyzer
 analyzer = NSysAnalyzer(db_path)
@@ -267,6 +267,9 @@ analyzer.print_summary("MLP Layer", mlp_layers)
 # Group the next kernel after each MLP layer as "Outer_skip_layer"
 outer_skip_layers = []
 for i, mlp_layer in enumerate(mlp_layers):
+    print(f"\nMLP Layer {i+1}:")
+    for k in mlp_layer['kernels_for_mlp']:
+        print(f"  Kernel: {k}")
     # Find the last kernel of the MLP layer
     if mlp_layer['kernels_for_mlp']:
         last_mlp_kernel = mlp_layer['kernels_for_mlp'][-1]
@@ -300,6 +303,28 @@ for i, mlp_layer in enumerate(mlp_layers):
         outer_skip_layers.append(outer_skip_layer)
 
 analyzer.print_summary("Outer Skip Layer", outer_skip_layers)
+
+# Print kernels for the first layer of each layer type, labeled appropriately
+all_layer_types = [
+    ("Norm Layer", norm_layers),
+    ("RealSHT Layer", realsht_layers),
+    ("DHconv Layer", dhconv_layers),
+    ("InverseSHT Layer", inversesht_layers),
+    ("Inner Skip Layer", inner_skip_layers),
+    ("Activation Layer", activation_layers),
+    ("MLP Layer", mlp_layers),
+    ("Outer Skip Layer", outer_skip_layers)
+]
+
+for layer_type_name, layers in all_layer_types:
+    if layers:
+        layer = layers[0]
+        print(f"\n{layer_type_name} 1:")
+        for k in layer.get('kernels', []):
+            name = k[0] if len(k) > 0 else None
+            start = k[2] if len(k) > 2 else None
+            duration = k[4] if len(k) > 4 else None
+            print(f"  Kernel: {name}, start: {start}, duration: {duration}")
 
 # Create runtime visualization for all layer types
 print("\n===== RUNTIME VISUALIZATION FOR LAYERS =====")
