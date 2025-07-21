@@ -1,7 +1,7 @@
 from nsys_utils import NSysAnalyzer
 
 # Path to the SQLite database
-db_path = "../A100/SFNO_NSYS/gigaio80/sfno_2048.sqlite"
+db_path = "../A100/SFNO_NSYS/gigaio80/sfno_1536.sqlite"
 # db_path = "../A100/ACE_NSYS/ACE2_400_50.sqlite"
 # Initialize the analyzer
 analyzer = NSysAnalyzer(db_path)

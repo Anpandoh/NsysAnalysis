@@ -20,6 +20,9 @@ def extract_size(name):
 
 trace_names = sorted(all_data.keys(), key=extract_size)
 
+# Extract embedded dimensions for x-axis
+trace_dims = [extract_size(name) for name in trace_names]
+
 # The 6 metric names (as in your metric_map)
 metric_names = [
     "4",  # SM Issue [Throughput %]
@@ -84,10 +87,11 @@ for metric in metric_names:
                     break
             if not found:
                 y.append(np.nan)
-        plt.plot(trace_names, y, marker='o', label=kernel_type)
+        plt.plot(trace_dims, y, marker='o', label=kernel_type)
     plt.title(f"{metric_labels[metric]} for Top Kernels Across Traces")
-    plt.xlabel("Trace (Model Size)")
+    plt.xlabel("Embedded Dimension")
     plt.ylabel(metric_labels[metric])
+    plt.xticks(trace_dims)
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     # Save plot
@@ -112,10 +116,11 @@ for metric in metric_names:
             metrics_by_layer = layer_data.get('metrics_by_layer_type', {})
             val = metrics_by_layer.get(layer_type, {}).get(metric)
             y.append(val if val is not None else np.nan)
-        plt.plot(trace_names, y, marker='o', label=layer_type)
+        plt.plot(trace_dims, y, marker='o', label=layer_type)
     plt.title(f"{metric_labels[metric]} for Layers Across Traces")
-    plt.xlabel("Trace (Model Size)")
+    plt.xlabel("Embedded Dimension")
     plt.ylabel(metric_labels[metric])
+    plt.xticks(trace_dims)
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     # Save plot
@@ -138,10 +143,11 @@ for kernel_type in all_top_kernels:
                 break
         if not found:
             y.append(np.nan)
-    plt.plot(trace_names, y, marker='o', label=kernel_type)
+    plt.plot(trace_dims, y, marker='o', label=kernel_type)
 plt.title("Total Runtime for Top Kernels Across Traces")
-plt.xlabel("Trace (Model Size)")
+plt.xlabel("Embedded Dimension")
 plt.ylabel("Total Duration (ms)")
+plt.xticks(trace_dims)
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.tight_layout()
 filename = "kernels_total_runtime.png"
@@ -164,10 +170,11 @@ for layer_type in all_layer_types:
         layer_runtime_data = layer_data.get('layer_runtime_data', {})
         val = layer_runtime_data.get(layer_type)
         y.append(val / 1e6 if val is not None else np.nan)  # Convert to ms
-    plt.plot(trace_names, y, marker='o', label=layer_type)
+    plt.plot(trace_dims, y, marker='o', label=layer_type)
 plt.title("Total Runtime for Layers Across Traces")
-plt.xlabel("Trace (Model Size)")
+plt.xlabel("Embedded Dimension")
 plt.ylabel("Total Duration (ms)")
+plt.xticks(trace_dims)
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.tight_layout()
 filename = "layers_total_runtime.png"
