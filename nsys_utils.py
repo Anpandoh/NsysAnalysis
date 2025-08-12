@@ -5,7 +5,6 @@ import re
 import numpy as np
 import os
 from typing import Dict, List, Tuple
-import json
 
 
 class NSysAnalyzer:
@@ -52,12 +51,6 @@ class NSysAnalyzer:
             JOIN StringIds AS names ON k.demangledName = names.id
         """
     
-    def fetch_kernels_by_pattern(self, pattern: str, order_by: str = "k.start ASC") -> List[Tuple]:
-        """Fetch kernels matching a specific pattern"""
-        query = self.get_kernel_query() + f" WHERE names.value LIKE '%{pattern}%' ORDER BY {order_by};"
-        self.cursor.execute(query)
-        return self.cursor.fetchall()
-    
     def fetch_all_kernels(self) -> List[Tuple]:
         """Fetch all kernels that start after the first memset kernel, ordered by start time"""
         # First, find the start time of the first memset operation from the MEMSET table
@@ -83,22 +76,6 @@ class NSysAnalyzer:
         kernels = self.cursor.fetchall()
         print(f"Found {len(kernels)} kernels starting after memset")
         return kernels
-    
-    def print_summary(self, item_type: str, items: List[Dict], duration_key: str = 'total_duration'):
-        """Print summary statistics for a given item type"""
-        print(f"\n===== {item_type} Summary =====")
-        print(f"Total {item_type} Found: {len(items)}")
-        if items:
-            avg_duration = sum(item[duration_key] for item in items) / len(items)
-            print(f"Average {item_type} Duration: {avg_duration/1e6:.2f} ms")
-            
-            # Find items with highest duration
-            sorted_items = sorted(items, key=lambda x: x[duration_key], reverse=True)
-            print(f"\nTop 3 Longest {item_type}:")
-            for i, item in enumerate(sorted_items[:3]):
-                item_id_key = f"{item_type.lower().replace(' ', '_')}_id"
-                item_num = item.get(item_id_key, i+1)
-                print(f"  {i+1}. {item_type} {item_num}: {item[duration_key]/1e6:.2f} ms")
     
     def get_metrics_by_layer(self, kernels: List[Tuple], max_kernels: int = 900) -> Dict[int, float]:
         """Get GPU metrics for a list of kernels"""
@@ -168,7 +145,6 @@ class NSysAnalyzer:
         # Calculate total number of batches and only process a fraction of them
         total_batches = (len(kernel_data) + batch_size - 1) // batch_size
 
-        print(f"Processing {total_batches} batches")
         for batch_start_idx in range(total_batches):
             batch_end_idx = min(batch_start_idx + batch_size, len(kernel_data))
             batch = kernel_data[batch_start_idx:batch_end_idx]
@@ -421,14 +397,6 @@ class NSysAnalyzer:
             percentage = (duration / total_runtime) * 100
             print(f"  {i+1}. {item_type}: {duration/1e6:.2f} ms ({percentage:.1f}%)")
     
-    def print_metrics_summary(self, metrics_data: Dict[str, Dict[int, float]], title: str = "METRICS SUMMARY"):
-        """Print a summary table of metrics"""
-        print(f"\n===== {title} =====")
-        for item_type, metrics in metrics_data.items():
-            print(f"\n{item_type}:")
-            for metric_id, value in metrics.items():
-                print(f"  {self.metric_map.get(metric_id, f'Metric {metric_id}')}: {value:.2f}%")
-    
     def extract_kernel_type(self, kernel_name: str) -> str:
         """Extract kernel type from kernel name"""
         # First, check for cutlass kernel patterns and shorten them
@@ -465,42 +433,94 @@ class NSysAnalyzer:
             kernel_types[kernel_type].append(kernel)
         return kernel_types 
 
-    def export_kernel_summary_to_json(self, json_path, total_all_kernels_runtime, top10_types, metrics_by_kernel, other_kernels_runtime, runtime_data):
-        """Export kernel summary statistics and metrics to a JSON file for later comparison."""
-        trace_summary = {
-            "trace_id": os.path.basename(self.db_path),
-            "total_all_kernels_runtime": total_all_kernels_runtime,
-            "top10_kernel_types": [
-                {
-                    "kernel_type": kernel_type,
-                    "total_duration": total_duration,
-                    "avg_duration": avg_duration,
-                    "num_calls": len(kernels),
-                    "example_grid": (kernels[0][8], kernels[0][9], kernels[0][10]) if kernels else None,
-                    "example_block": (kernels[0][11], kernels[0][12], kernels[0][13]) if kernels else None,
-                    "metrics": metrics_by_kernel.get(kernel_type, {})
-                }
-                for kernel_type, total_duration, avg_duration, kernels in top10_types
-            ],
-            "other_kernels_runtime": other_kernels_runtime,
-            "runtime_data": runtime_data,
-        }
-        with open(json_path, "w") as f:
-            json.dump(trace_summary, f, indent=2)
-        print(f"Saved kernel summary to {json_path}")
-
-    def export_layer_summary_to_json(self, json_path, layer_runtime_data, metrics_by_layer_type=None):
-        """Export layer summary statistics and metrics to a JSON file for later comparison."""
-        trace_summary = {
-            "trace_id": os.path.basename(self.db_path),
-            "layer_runtime_data": layer_runtime_data,
-        }
-        if metrics_by_layer_type is not None:
-            # Convert numpy types to float for JSON serialization
-            metrics_by_layer_type_clean = {}
-            for layer_type, metrics in metrics_by_layer_type.items():
-                metrics_by_layer_type_clean[layer_type] = {str(k): float(v) for k, v in metrics.items()}
-            trace_summary["metrics_by_layer_type"] = metrics_by_layer_type_clean
-        with open(json_path, "w") as f:
-            json.dump(trace_summary, f, indent=2)
-        print(f"Saved layer summary to {json_path}") 
+    def create_nvtx_metrics_visualizations(self, nvtx_metrics_data):
+        """
+        Create GPU metrics visualizations for NVTX ranges.
+        Each graph shows one metric across all NVTX ranges.
+        """
+        if not nvtx_metrics_data:
+            print("No NVTX metrics data available for visualization")
+            return
+        
+        # Create output directory
+        # Extract clean base name from db_path
+        # Use naming_db_path if it exists (for overriding directory names), otherwise use db_path
+        path_for_naming = getattr(self, 'naming_db_path', self.db_path)
+        base_name = os.path.splitext(os.path.basename(path_for_naming))[0]
+        # Remove "_correlated" suffix if present
+        if base_name.endswith("_correlated"):
+            base_name = base_name[:-11]
+        # Remove "_nvtx" suffix if present to get clean trace name
+        if base_name.endswith("_nvtx"):
+            base_name = base_name[:-5]
+        output_dir = f"{base_name}_layer_graphs"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Get NVTX range names
+        range_names = list(nvtx_metrics_data.keys())
+        
+        # Create a separate graph for each metric
+        for metric_id, metric_name in self.metric_map.items():
+            plt.figure(figsize=(16, 10))
+            
+            # Extract metric values for this metric across all NVTX ranges
+            metric_values = []
+            valid_ranges = []
+            
+            for range_name in range_names:
+                metrics = nvtx_metrics_data[range_name].get('metrics', {})
+                if metric_id in metrics:
+                    metric_values.append(metrics[metric_id])
+                    valid_ranges.append(range_name)
+            
+            if not metric_values:
+                print(f"No data found for {metric_name}")
+                plt.close()
+                continue
+            
+            # Create bar chart
+            x = np.arange(len(valid_ranges))
+            bars = plt.bar(x, metric_values, color='skyblue', alpha=0.8)
+            
+            plt.xlabel('NVTX Range', fontsize=12)
+            plt.ylabel('Throughput %', fontsize=12)
+            plt.title(f'{metric_name} by NVTX Range', fontsize=14, pad=20)
+            
+            # Rotate x-axis labels for better readability
+            plt.xticks(x, valid_ranges, rotation=45, ha='right')
+            
+            # Add value labels on bars
+            for i, v in enumerate(metric_values):
+                plt.text(i, v + max(metric_values) * 0.01, f'{v:.1f}%', 
+                        ha='center', va='bottom', fontsize=10)
+            
+            # Add grid for better readability
+            plt.grid(axis='y', alpha=0.3)
+            
+            # Adjust layout
+            plt.tight_layout()
+            
+            # Save the plot
+            filename = metric_name.replace('[', '').replace(']', '').replace(' ', '_').lower()
+            filepath = os.path.join(output_dir, f'nvtx_{filename}.png')
+            plt.savefig(filepath, bbox_inches='tight', dpi=300)
+            plt.close()
+        
+        # Print summary
+        print(f"\n===== NVTX METRICS VISUALIZATION SUMMARY =====")
+        print(f"Graphs saved in '{output_dir}/' folder:")
+        for metric_id, metric_name in self.metric_map.items():
+            filename = metric_name.replace('[', '').replace(']', '').replace(' ', '_').lower()
+            print(f"- nvtx_{filename}.png - {metric_name} by NVTX range")
+        
+        # Print statistics summary
+        print(f"\n===== NVTX METRICS SUMMARY =====")
+        for range_name, data in nvtx_metrics_data.items():
+            print(f"\n{range_name}:")
+            metrics = data.get('metrics', {})
+            if metrics:
+                for metric_id, value in metrics.items():
+                    metric_name = self.metric_map.get(metric_id, f"Metric {metric_id}")
+                    print(f"  {metric_name}: {value:.2f}%")
+            else:
+                print(f"  No metrics available") 
