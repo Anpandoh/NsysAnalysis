@@ -3,7 +3,7 @@ sfno_*
 ACE2_*
 scaled_model_graphs
 all_traces_summary.json
-results.csv
+results*
 
 
 
