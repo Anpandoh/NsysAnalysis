@@ -4,11 +4,11 @@ import numpy as np
 import os
 
 # Load the unified summary
-with open('all_traces_summary.json', 'r') as f:
+with open('fcn3_traces_summary.json', 'r') as f:
     all_data = json.load(f)
 
 # Output directory for plots
-output_dir = 'scaled_model_graphs'
+output_dir = 'fcn3_scaled_model_graphs'
 os.makedirs(output_dir, exist_ok=True)
 
 # Sort traces by model size (assuming base name encodes this, e.g., sfno_1024, sfno_2048, etc.)

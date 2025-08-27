@@ -5,7 +5,10 @@ import shutil
 import json
 import matplotlib.pyplot as plt
 import numpy as np
-import os
+# Use absolute path to avoid working directory issues
+script_dir = os.path.dirname(os.path.abspath(__file__))
+db_path = os.path.join(script_dir, "../A100/FCN3_NSYS/fcn3_a100_launch_block_225.sqlite")
+
 
 def correlate_cuda_kernels_with_api(original_db_path: str, output_db_path: str = None):
     """
@@ -231,10 +234,15 @@ def analyze_nvtx_ranges_with_cuda_timing(correlated_db_path: str):
             print("No NVTX ranges found in database.")
             return
         
-        # Filter out "inference" range
-        filtered_ranges = [range_info for range_info in nvtx_ranges if "inference" not in range_info[0].lower()]
+        # Filter out "inference", "warmup", "fcn3_profiling", and "Global convolution" ranges
+        filtered_ranges = [range_info for range_info in nvtx_ranges 
+                          if "inference" not in range_info[0].lower() 
+                          and not range_info[0].lower().startswith(":warmup")
+                          and range_info[0] != ":fcn3_profiling"
+                          and range_info[0] != ":Global convolution"
+                          and range_info[0] != ":forward_pass"]
         
-        print(f"\nFound {len(nvtx_ranges)} unique NVTX ranges (excluding 'inference'):")
+        print(f"\nFound {len(filtered_ranges)} unique NVTX ranges (excluding 'inference', ':warmup*', ':fcn3_profiling', ':Global convolution', and ':forward_pass'):")
         for range_name in filtered_ranges:
             print(f"- {range_name[0]}")
         
@@ -653,10 +661,15 @@ def get_metrics_by_nvtx_range(correlated_db_path: str, analyzer: NSysAnalyzer):
             print("No NVTX ranges found in database.")
             return {}
         
-        # Filter out "inference" range
-        filtered_ranges = [range_info for range_info in nvtx_ranges if "inference" not in range_info[0].lower()]
+        # Filter out "inference", "warmup", "fcn3_profiling", and "Global convolution" ranges
+        filtered_ranges = [range_info for range_info in nvtx_ranges 
+                          if "inference" not in range_info[0].lower() 
+                          and not range_info[0].lower().startswith(":warmup")
+                          and range_info[0] != ":fcn3_profiling"
+                          and range_info[0] != ":Global convolution"
+                          and range_info[0] != ":forward_pass"]
         
-        print(f"\nFound {len(filtered_ranges)} unique NVTX ranges (excluding 'inference'):")
+        print(f"\nFound {len(filtered_ranges)} unique NVTX ranges (excluding 'inference', ':warmup*', ':fcn3_profiling', ':Global convolution', and ':forward_pass'):")
         for range_name in filtered_ranges:
             print(f"- {range_name[0]}")
         
@@ -887,7 +900,6 @@ def aggregate_layer_metrics(nvtx_metrics):
     return layer_runtime_data, metrics_by_layer_type
 
 
-db_path = "../A100/SFNO_NSYS/gigaio80/nvtx/sfno_256_nvtx.sqlite"
 
 # Initialize the analyzer
 analyzer = NSysAnalyzer(db_path)
