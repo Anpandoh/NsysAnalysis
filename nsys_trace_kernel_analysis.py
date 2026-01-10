@@ -1,7 +1,8 @@
 from nsys_utils import NSysAnalyzer
 
 # Path to the SQLite database
-db_path = "../A100/SFNO_NSYS/gigaio80/sfno_1536.sqlite"
+db_path = "../A100/ACE_NSYS/ace2_nvtx_400_50.sqlite"
+# db_path = "../A100/SFNO_NSYS/liqid/sfno_384.sqlite"
 # db_path = "../A100/SFNO_NSYS/gigaio80/sfno_2048.sqlite"
 # db_path = "../A100/ACE_NSYS/ACE2_400_50.sqlite"
 
@@ -31,18 +32,23 @@ print(f"Fetched {len(all_kernels)} total kernels")
 # Group all kernels by type
 kernel_types = analyzer.group_kernels_by_type(all_kernels)
 
-# Compute total duration for each kernel type
+# Compute total duration for each kernel type (excluding first 4 iterations as startup outliers)
 sum_duration_by_type = []
 for kernel_type, kernels in kernel_types.items():
-    total_duration = sum(k[4] for k in kernels)
-    avg_duration = total_duration / len(kernels) if kernels else 0
-    sum_duration_by_type.append((kernel_type, total_duration, avg_duration, kernels))
+    # Skip first 4 kernels of each type (startup outliers)
+    kernels_filtered = kernels[4:] if len(kernels) > 4 else []
+    if kernels_filtered:
+        total_duration = sum(k[4] for k in kernels_filtered)
+        avg_duration = total_duration / len(kernels_filtered)
+        sum_duration_by_type.append((kernel_type, total_duration, avg_duration, kernels_filtered))
+    else:
+        print(f"Warning: Kernel type '{kernel_type}' has {len(kernels)} kernels, skipping (need >4 for analysis)")
 
 # Sort by total duration and select top 10
 sum_duration_by_type.sort(key=lambda x: x[1], reverse=True)
 top10_types = sum_duration_by_type[:10]
 
-print(f"Top 10 unique kernel types by total duration:")
+print(f"Top 10 unique kernel types by total duration (excluding first 4 iterations):")
 for i, (kernel_type, total_duration, avg_duration, kernels) in enumerate(top10_types):
     print(f"{i+1}. {kernel_type} | Total Duration: {total_duration/1e6:.2f} ms | Avg Duration: {avg_duration/1e6:.2f} ms | Calls: {len(kernels)} | Example Grid: ({kernels[0][8]},{kernels[0][9]},{kernels[0][10]}) | Block: ({kernels[0][11]},{kernels[0][12]},{kernels[0][13]})")
 
@@ -72,9 +78,9 @@ else:
     print("No 'Other Kernels' category needed - top 10 account for 100% of runtime")
 
 # Pass the total runtime for accurate percentage calculation
-analyzer.create_runtime_visualizations(runtime_data, prefix="kernel", title_prefix="Top 10 Kernel Type (Total Duration) ", total_runtime=total_all_kernels_runtime)
+analyzer.create_runtime_visualizations(runtime_data, prefix="kernel", title_prefix="Top 10 Kernel Type (Total Duration, Excluding First 4) ", total_runtime=total_all_kernels_runtime)
 
-print("\n===== SM ISSUE ANALYSIS FOR TOP 10 KERNEL TYPES (BY TOTAL DURATION) =====")
+print("\n===== SM ISSUE ANALYSIS FOR TOP 10 KERNEL TYPES (BY TOTAL DURATION, EXCLUDING FIRST 4) =====")
 for i, (kernel_type, total_duration, avg_duration, kernels) in enumerate(top10_types):
     print(f"{i+1}. {kernel_type}")
     print(f"   Calls: {len(kernels)}")
@@ -100,19 +106,20 @@ if analyzer.table_exists("TARGET_INFO_GPU_METRICS"):
 # Extract relevant metrics for the top 10 kernel types
 metrics_by_kernel = {}
 if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_GPU_METRICS"):
-    print("\n===== METRICS FOR TOP 10 KERNEL TYPES (BY TOTAL DURATION) =====")
+    print("\n===== METRICS FOR TOP 10 KERNEL TYPES (BY TOTAL DURATION, EXCLUDING FIRST 4) =====")
     for i, (kernel_type, total_duration, avg_duration, kernels) in enumerate(top10_types):
         print(f"\nProcessing kernel type {i}: {kernel_type}")
-        # Only use the middle 750 kernels for metrics analysis
-        if len(kernels) > 2000:
-            start_idx = (len(kernels) - 2000) // 2
-            kernels_for_metrics = kernels[start_idx:start_idx + 2000]
+        # Skip first 4 kernels (startup outliers), then use middle kernels for large datasets
+        kernels_no_startup = kernels[4:] if len(kernels) > 4 else kernels
+        if len(kernels_no_startup) > 2000:
+            start_idx = (len(kernels_no_startup) - 2000) // 2
+            kernels_for_metrics = kernels_no_startup[start_idx:start_idx + 2000]
         else:
-            kernels_for_metrics = kernels
+            kernels_for_metrics = kernels_no_startup
         kernel_avg_metrics = analyzer.get_metrics_by_kernel(kernels_for_metrics, batch_size=500)
         metrics_by_kernel[kernel_type] = kernel_avg_metrics
 
-    print("\n===== METRICS BY KERNEL TYPE (TOP 10 BY TOTAL DURATION) =====")
+    print("\n===== METRICS BY KERNEL TYPE (TOP 10 BY TOTAL DURATION, EXCLUDING FIRST 4) =====")
     for kernel_type, metrics in metrics_by_kernel.items():
         print(f"\nKernel Type: {kernel_type}")
         if metrics:
@@ -123,7 +130,7 @@ if analyzer.table_exists("GPU_METRICS") and analyzer.table_exists("TARGET_INFO_G
 
     # Create visualizations
     if metrics_by_kernel:
-        analyzer.create_visualizations(metrics_by_kernel, prefix="kernel", title_prefix="Top 10 Kernel Type (Total Duration) ")
+        analyzer.create_visualizations(metrics_by_kernel, prefix="kernel", title_prefix="Top 10 Kernel Type (Total Duration, Excluding First 4) ")
 
 # Close the connection when done
 analyzer.disconnect()

@@ -53,19 +53,38 @@ class NSysAnalyzer:
     
     def fetch_all_kernels(self) -> List[Tuple]:
         """Fetch all kernels that start after the first memset kernel, ordered by start time"""
+        # Check if MEMSET table exists
+        if not self.table_exists('CUPTI_ACTIVITY_KIND_MEMSET'):
+            print("Warning: CUPTI_ACTIVITY_KIND_MEMSET table not found. Returning all kernels.")
+            query = self.get_kernel_query() + " ORDER BY k.start ASC;"
+            self.cursor.execute(query)
+            kernels = self.cursor.fetchall()
+            print(f"Found {len(kernels)} kernels")
+            return kernels
+        
         # First, find the start time of the first memset operation from the MEMSET table
         memset_query = """
             SELECT start FROM CUPTI_ACTIVITY_KIND_MEMSET 
             ORDER BY start ASC LIMIT 1;
         """
-        self.cursor.execute(memset_query)
-        memset_result = self.cursor.fetchone()
+        try:
+            self.cursor.execute(memset_query)
+            memset_result = self.cursor.fetchone()
+        except Exception as e:
+            print(f"Warning: Error querying MEMSET table: {e}. Returning all kernels.")
+            query = self.get_kernel_query() + " ORDER BY k.start ASC;"
+            self.cursor.execute(query)
+            kernels = self.cursor.fetchall()
+            print(f"Found {len(kernels)} kernels")
+            return kernels
         
         if memset_result is None:
             print("Warning: No memset operation found. Returning all kernels.")
             query = self.get_kernel_query() + " ORDER BY k.start ASC;"
             self.cursor.execute(query)
-            return self.cursor.fetchall()
+            kernels = self.cursor.fetchall()
+            print(f"Found {len(kernels)} kernels")
+            return kernels
         
         memset_start = memset_result[0]  # start time is the first column
         print(f"Found memset operation starting at {memset_start}. Filtering kernels after this time.")

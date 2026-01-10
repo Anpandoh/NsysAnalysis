@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 # Use absolute path to avoid working directory issues
 script_dir = os.path.dirname(os.path.abspath(__file__))
-db_path = os.path.join(script_dir, "../A100/FCN3_NSYS/fcn3_a100_launch_block_225.sqlite")
+db_path = os.path.join(script_dir, "../A100/ACE_NSYS/ace2_nvtx_400_50.sqlite")
 
 
 def correlate_cuda_kernels_with_api(original_db_path: str, output_db_path: str = None):
@@ -295,9 +295,13 @@ def analyze_nvtx_ranges_with_cuda_timing(correlated_db_path: str):
                 print("  No timing information found for this range")
                 continue
             
-            # Aggregate statistics across all occurrences
-            total_occurrences = len(range_times)
-            total_nvtx_time = sum(duration for _, _, duration in range_times)
+            # Aggregate statistics across all occurrences (excluding first occurrence)
+            range_times_filtered = range_times[1:]  # Skip first occurrence (startup outlier)
+            total_occurrences = len(range_times_filtered)
+            if total_occurrences == 0:
+                print("  No occurrences remaining after excluding first occurrence")
+                continue
+            total_nvtx_time = sum(duration for _, _, duration in range_times_filtered)
             avg_nvtx_time = total_nvtx_time / total_occurrences
             
             print(f"  Occurrences: {total_occurrences}")
@@ -310,9 +314,9 @@ def analyze_nvtx_ranges_with_cuda_timing(correlated_db_path: str):
                 print("  No CUDA API runtime data available for correlation")
                 continue
             
-            # Aggregate all CUDA API calls across all occurrences
+            # Aggregate all CUDA API calls across all occurrences (excluding first occurrence)
             all_cuda_calls = []
-            for start_time, end_time, _ in range_times:
+            for start_time, end_time, _ in range_times[1:]:  # Skip first occurrence (startup outlier)
                 cursor.execute("""
                     SELECT 
                         name,
@@ -562,7 +566,7 @@ def create_nvtx_runtime_visualization(nvtx_data: dict, db_path: str):
     # Customize the plot
     plt.xlabel('NVTX Range', fontsize=12)
     plt.ylabel('Average Kernel Execution Time (ms)', fontsize=12)
-    plt.title('Average Kernel Execution Time by NVTX Range (Ordered by First Occurrence)', fontsize=14, pad=20)
+    plt.title('Average Kernel Execution Time by NVTX Range (Excluding First Occurrence)\n(Ordered by First Occurrence)', fontsize=14, pad=20)
     
     # Rotate x-axis labels
     plt.xticks(x, occurrence_names, rotation=45, ha='right')
@@ -583,15 +587,15 @@ def create_nvtx_runtime_visualization(nvtx_data: dict, db_path: str):
     plt.close()
     
     print(f"\nRuntime visualizations saved in '{output_dir}/' folder:")
-    print(f"- nvtx_kernel_execution_time.png - Kernel execution time by NVTX range (ordered by first occurrence)")
+    print(f"- nvtx_kernel_execution_time.png - Kernel execution time by NVTX range (excluding first occurrence, ordered by first occurrence)")
     
     # Print summary statistics
-    print(f"\n===== NVTX RUNTIME SUMMARY =====")
+    print(f"\n===== NVTX RUNTIME SUMMARY (Excluding First Occurrences) =====")
     total_kernel_time = sum(avg_kernel_times)
     
     print(f"Total kernel execution time: {total_kernel_time:.2f} ms")
     
-    print(f"\nNVTX ranges ordered by first occurrence:")
+    print(f"\nNVTX ranges ordered by first occurrence (data excludes first occurrence):")
     for i, (name, kernel_time, _) in enumerate(sorted_by_occurrence, 1):
         percentage = kernel_time / total_kernel_time * 100 if total_kernel_time > 0 else 0
         print(f"  {i}. {name}: {kernel_time:.2f} ms ({percentage:.1f}%)")
@@ -663,7 +667,7 @@ def get_metrics_by_nvtx_range(correlated_db_path: str, analyzer: NSysAnalyzer):
         
         # Filter out "inference", "warmup", "fcn3_profiling", and "Global convolution" ranges
         filtered_ranges = [range_info for range_info in nvtx_ranges 
-                          if "inference" not in range_info[0].lower() 
+                          if not range_info[0].lower().startswith(":inference") 
                           and not range_info[0].lower().startswith(":warmup")
                           and range_info[0] != ":fcn3_profiling"
                           and range_info[0] != ":Global convolution"
@@ -720,11 +724,16 @@ def get_metrics_by_nvtx_range(correlated_db_path: str, analyzer: NSysAnalyzer):
                 print("  No timing information found for this range")
                 continue
             
-            # Collect all kernels that execute within this NVTX range using correlation IDs
+            # Collect all kernels that execute within this NVTX range using correlation IDs (excluding first occurrence)
             all_kernels_in_range = []
             correlation_ids_used = set()
             
-            for start_time, end_time, _ in range_times:
+            range_times_filtered = range_times[1:]  # Skip first occurrence (startup outlier)
+            if not range_times_filtered:
+                print("  No occurrences remaining after excluding first occurrence")
+                continue
+            
+            for start_time, end_time, _ in range_times_filtered:
                 # Check if CUPTI_ACTIVITY_KIND_RUNTIME table exists for correlation
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='CUPTI_ACTIVITY_KIND_RUNTIME';")
                 if not cursor.fetchone():
@@ -784,25 +793,25 @@ def get_metrics_by_nvtx_range(correlated_db_path: str, analyzer: NSysAnalyzer):
                 print("  No kernels found in this range")
                 continue
             
-            print(f"  Found {len(all_kernels_in_range)} total kernel executions across all occurrences")
+            print(f"  Found {len(all_kernels_in_range)} total kernel executions across filtered occurrences")
             print(f"  Correlation IDs used: {len(correlation_ids_used)}")
             
             # Calculate metrics for all kernels in this NVTX range
             # Use the existing get_metrics_by_layer method from NSysAnalyzer
             range_metrics = analyzer.get_metrics_by_layer(all_kernels_in_range)
             
-            # Store the metrics data
+            # Store the metrics data (using filtered range times)
             nvtx_metrics_data[range_name] = {
                 'metrics': range_metrics,
                 'kernel_count': len(all_kernels_in_range),
-                'range_occurrences': len(range_times),
-                'total_range_time': sum(duration for _, _, duration in range_times)
+                'range_occurrences': len(range_times_filtered),
+                'total_range_time': sum(duration for _, _, duration in range_times_filtered)
             }
             
             # Print summary for this range
             print(f"  Kernel count: {len(all_kernels_in_range)}")
-            print(f"  Range occurrences: {len(range_times)}")
-            print(f"  Total range time: {sum(duration for _, _, duration in range_times)/1e6:.2f} ms")
+            print(f"  Range occurrences: {len(range_times_filtered)} (excluding first occurrence)")
+            print(f"  Total range time: {sum(duration for _, _, duration in range_times_filtered)/1e6:.2f} ms")
             
             if range_metrics:
                 print(f"  Metrics found:")
