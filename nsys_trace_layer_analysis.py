@@ -419,6 +419,9 @@ def analyze_nvtx_ranges_with_cuda_timing(correlated_db_path: str):
         # Create runtime visualization
         create_nvtx_runtime_visualization(nvtx_data, db_path)
         
+        # Create IEEE-styled pie chart
+        create_nvtx_pie_chart(nvtx_data, db_path)
+        
         # Overall summary across all ranges
         print(f"\n===== Overall Summary =====")
         
@@ -599,6 +602,239 @@ def create_nvtx_runtime_visualization(nvtx_data: dict, db_path: str):
     for i, (name, kernel_time, _) in enumerate(sorted_by_occurrence, 1):
         percentage = kernel_time / total_kernel_time * 100 if total_kernel_time > 0 else 0
         print(f"  {i}. {name}: {kernel_time:.2f} ms ({percentage:.1f}%)")
+
+
+def create_nvtx_pie_chart(nvtx_data: dict, db_path: str):
+    """
+    Create an IEEE-styled pie chart showing kernel execution time distribution
+    across NVTX ranges (layers).
+    
+    Args:
+        nvtx_data: Dictionary containing NVTX range analysis data
+        db_path: Path to the database for naming output files
+    """
+    import matplotlib
+    matplotlib.rcParams['pdf.fonttype'] = 42  # TrueType fonts for IEEE
+    matplotlib.rcParams['ps.fonttype'] = 42
+    
+    if not nvtx_data:
+        print("No NVTX data available for pie chart")
+        return
+    
+    # Create output directory
+    base_name = os.path.splitext(os.path.basename(db_path))[0]
+    if base_name.endswith("_nvtx"):
+        base_name = base_name[:-5]
+    output_dir = f"{base_name}_layer_graphs"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Get first occurrence time for ordering (same logic as bar chart)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    range_names = list(nvtx_data.keys())
+    first_occurrence_times = {}
+    for range_name in range_names:
+        cursor.execute("""
+            WITH domains AS (
+                SELECT
+                    ne.domainId AS id,
+                    ne.globalTid AS globalTid,
+                    COALESCE(sid.value, ne.text) AS name
+                FROM
+                    NVTX_EVENTS AS ne
+                LEFT JOIN
+                    StringIds AS sid ON ne.textId = sid.id
+                WHERE
+                    ne.eventType = 75
+                GROUP BY ne.domainId, ne.globalTid
+            )
+            SELECT MIN(ne.start) as first_start
+            FROM
+                NVTX_EVENTS AS ne
+            LEFT JOIN
+                domains AS d
+                ON ne.domainId = d.id
+                AND (ne.globalTid & 0x0000FFFFFF000000) = (d.globalTid & 0x0000FFFFFF000000)
+            LEFT JOIN
+                StringIds AS sid ON ne.textId = sid.id
+            WHERE
+                (ne.eventType = 59 OR ne.eventType = 70)
+                AND (COALESCE(d.name, '') || ':' || COALESCE(sid.value, ne.text, '')) = ?
+        """, (range_name,))
+        result = cursor.fetchone()
+        if result and result[0] is not None:
+            first_occurrence_times[range_name] = result[0]
+    conn.close()
+    
+    # Sort by first occurrence time (same order as bar chart)
+    sorted_data = []
+    for range_name in range_names:
+        if range_name in first_occurrence_times:
+            kernel_time = nvtx_data[range_name]['avg_kernel_time'] / 1e6  # Convert to ms
+            sorted_data.append((range_name, kernel_time, first_occurrence_times[range_name]))
+    sorted_data.sort(key=lambda x: x[2])
+    
+    names = [item[0] for item in sorted_data]
+    times = [item[1] for item in sorted_data]
+    total_time = sum(times)
+    percentages = [(t / total_time) * 100 for t in times]
+    
+    # Clean up layer names: strip leading colon and whitespace
+    clean_names = [n.lstrip(':').strip() for n in names]
+    
+    # --- IEEE-style rcParams ---
+    plt.rcParams.update({
+        'font.family': 'serif',
+        'font.serif': ['Times New Roman', 'Times', 'DejaVu Serif'],
+        'font.size': 9,
+        'axes.labelsize': 10,
+        'axes.titlesize': 11,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 8,
+        'figure.dpi': 100,
+        'savefig.dpi': 300,
+        'savefig.bbox': 'tight',
+        'text.usetex': False,
+    })
+    
+    # IEEE single-column width is ~3.5 in, double-column ~7.16 in
+    fig, ax = plt.subplots(figsize=(7.16, 4.5))
+    
+    # Color palette: muted, professional, distinguishable in grayscale
+    # Using a curated set rather than a colormap for better control
+    ieee_colors = [
+        '#4878CF',  # blue
+        '#6ACC65',  # green
+        '#D65F5F',  # red
+        '#B47CC7',  # purple
+        '#C4AD66',  # olive
+        '#77BEDB',  # light blue
+        '#D4A373',  # tan
+        '#92C5DE',  # sky blue
+        '#F0B27A',  # peach
+        '#82C785',  # sage
+        '#AEB6BF',  # gray
+        '#F1948A',  # salmon
+    ]
+    colors = ieee_colors[:len(names)]
+    
+    # Explode the largest slice slightly for emphasis
+    max_idx = times.index(max(times))
+    explode = [0.03 if i == max_idx else 0.0 for i in range(len(times))]
+    
+    # Create pie chart
+    wedges, texts, autotexts = ax.pie(
+        times,
+        labels=None,  # We'll use a legend instead for cleanliness
+        autopct=lambda pct: f'{pct:.1f}%' if pct >= 3.0 else '',
+        startangle=90,
+        colors=colors,
+        explode=explode,
+        pctdistance=0.75,
+        wedgeprops={'linewidth': 0.5, 'edgecolor': 'white'},
+        textprops={'fontsize': 8, 'fontfamily': 'serif'},
+    )
+    
+    # Style the percentage text
+    for autotext in autotexts:
+        autotext.set_fontsize(7.5)
+        autotext.set_fontweight('bold')
+        autotext.set_color('white')
+    
+    ax.set_aspect('equal')
+    
+    # Build legend labels: "Layer Name (X.XX ms, Y.Y%)"
+    legend_labels = [
+        f'{clean_names[i]} ({times[i]:.2f} ms, {percentages[i]:.1f}%)'
+        for i in range(len(clean_names))
+    ]
+    
+    ax.legend(
+        wedges, legend_labels,
+        title='Layer',
+        title_fontproperties={'weight': 'bold', 'size': 9},
+        loc='center left',
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=8,
+        frameon=True,
+        fancybox=False,
+        edgecolor='black',
+        framealpha=1.0,
+    )
+    
+    ax.set_title(
+        'Kernel Execution Time Distribution by Layer',
+        fontsize=11, fontweight='bold', fontfamily='serif',
+        pad=12
+    )
+    
+    # Add total time annotation
+    ax.annotate(
+        f'Total: {total_time:.2f} ms',
+        xy=(0.5, -0.02), xycoords='axes fraction',
+        ha='center', fontsize=8, fontstyle='italic', fontfamily='serif',
+    )
+    
+    plt.tight_layout()
+    
+    pie_filepath = os.path.join(output_dir, 'nvtx_kernel_execution_time_pie.png')
+    plt.savefig(pie_filepath, bbox_inches='tight', dpi=300)
+    plt.close()
+    
+    # Also save as PDF for IEEE submission quality
+    pdf_filepath = os.path.join(output_dir, 'nvtx_kernel_execution_time_pie.pdf')
+    fig2, ax2 = plt.subplots(figsize=(7.16, 4.5))
+    
+    wedges2, texts2, autotexts2 = ax2.pie(
+        times,
+        labels=None,
+        autopct=lambda pct: f'{pct:.1f}%' if pct >= 3.0 else '',
+        startangle=90,
+        colors=colors,
+        explode=explode,
+        pctdistance=0.75,
+        wedgeprops={'linewidth': 0.5, 'edgecolor': 'white'},
+        textprops={'fontsize': 8, 'fontfamily': 'serif'},
+    )
+    for autotext in autotexts2:
+        autotext.set_fontsize(7.5)
+        autotext.set_fontweight('bold')
+        autotext.set_color('white')
+    
+    ax2.set_aspect('equal')
+    ax2.legend(
+        wedges2, legend_labels,
+        title='Layer',
+        title_fontproperties={'weight': 'bold', 'size': 9},
+        loc='center left',
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=8,
+        frameon=True,
+        fancybox=False,
+        edgecolor='black',
+        framealpha=1.0,
+    )
+    ax2.set_title(
+        'Kernel Execution Time Distribution by Layer',
+        fontsize=11, fontweight='bold', fontfamily='serif',
+        pad=12
+    )
+    ax2.annotate(
+        f'Total: {total_time:.2f} ms',
+        xy=(0.5, -0.02), xycoords='axes fraction',
+        ha='center', fontsize=8, fontstyle='italic', fontfamily='serif',
+    )
+    plt.tight_layout()
+    fig2.savefig(pdf_filepath, bbox_inches='tight', format='pdf')
+    plt.close()
+    
+    # Reset rcParams to defaults so we don't affect other plots
+    plt.rcParams.update(plt.rcParamsDefault)
+    
+    print(f"- nvtx_kernel_execution_time_pie.png - Kernel execution time pie chart (IEEE style)")
+    print(f"- nvtx_kernel_execution_time_pie.pdf - Kernel execution time pie chart (PDF, IEEE submission quality)")
 
 
 def get_metrics_by_nvtx_range(correlated_db_path: str, analyzer: NSysAnalyzer):

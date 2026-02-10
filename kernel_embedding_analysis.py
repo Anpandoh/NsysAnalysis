@@ -20,6 +20,25 @@ import matplotlib.pyplot as plt
 from typing import Dict, List
 from nsys_utils import NSysAnalyzer
 
+# IEEE-style matplotlib configuration
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+plt.rcParams.update({
+    'font.size': 12,
+    'axes.labelsize': 14,
+    'axes.titlesize': 16,
+    'xtick.labelsize': 12,
+    'ytick.labelsize': 12,
+    'legend.fontsize': 11,
+    'lines.linewidth': 2.5,
+    'lines.markersize': 8,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
+    'axes.spines.right': False,
+    'axes.spines.top': False,
+    'axes.linewidth': 1.2
+})
+
 
 class KernelEmbeddingAnalyzer:
     """Analyze kernel traces across different embedding dimensions"""
@@ -199,10 +218,8 @@ class KernelEmbeddingAnalyzer:
         
         valid_dims = sorted(kernel_data.keys())
         
-        # Create a graph for each metric
+        # Create IEEE-style graphs for each metric
         for metric_id, metric_name in self.metric_map.items():
-            plt.figure(figsize=(12, 7))
-            
             # Extract metric values for this metric
             metric_values = []
             metric_dims = []
@@ -215,29 +232,41 @@ class KernelEmbeddingAnalyzer:
             
             if not metric_values:
                 print(f"No data for {metric_name} for kernel {kernel_type}")
-                plt.close()
                 continue
             
+            fig, ax = plt.subplots(figsize=(8, 5))
+            
             # Create line plot with markers
-            plt.plot(metric_dims, metric_values, marker='o', linewidth=2, 
-                    markersize=8, color='steelblue', label=metric_name)
+            ax.plot(metric_dims, metric_values, marker='o', 
+                   color='#2E86C1', linewidth=2.5, markersize=8)
             
             # Add value labels
-            for i, (dim, val) in enumerate(zip(metric_dims, metric_values)):
-                plt.text(dim, val, f'{val:.1f}%', ha='center', va='bottom', fontsize=10)
+            for dim, val in zip(metric_dims, metric_values):
+                ax.text(dim, val, f'{val:.1f}%', ha='center', va='bottom', fontsize=10)
             
-            # Formatting
-            plt.xlabel('Embedding Dimension', fontsize=12)
-            plt.ylabel('Throughput %', fontsize=12)
-            plt.title(f'{kernel_type} - {metric_name} vs Embedding Dimension', fontsize=14)
-            plt.grid(True, alpha=0.3)
-            plt.xticks(valid_dims)
-            plt.ylim(0, 100)
+            # Add vertical lines for ACE models if they're in the metric range
+            if 256 in metric_dims:
+                ax.axvline(x=256, color='red', linestyle='--', alpha=0.7, linewidth=2)
+                ax.text(256, ax.get_ylim()[1] * 0.90, 'ACE', rotation=0, 
+                       fontsize=11, ha='center', va='center', color='red', fontweight='bold',
+                       bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='red'))
+            
+            if 384 in metric_dims:
+                ax.axvline(x=384, color='blue', linestyle='--', alpha=0.7, linewidth=2)
+                ax.text(384, ax.get_ylim()[1] * 0.90, 'ACE2', rotation=0, 
+                       fontsize=11, ha='center', va='center', color='blue', fontweight='bold',
+                       bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='blue'))
+            
+            # IEEE-style formatting
+            ax.set_xlabel('Embedding Dimension')
+            ax.set_ylabel('Throughput (%)')
+            ax.set_xticks(metric_dims)
+            ax.set_ylim(0, 100)
             
             # Save the plot
             filename = metric_name.replace('[', '').replace(']', '').replace(' ', '_').lower()
             filepath = os.path.join(output_dir, f'{filename}.png')
-            plt.savefig(filepath, bbox_inches='tight', dpi=300)
+            plt.savefig(filepath, bbox_inches='tight', dpi=300, facecolor='white')
             plt.close()
         
         # Create runtime graphs
@@ -247,46 +276,60 @@ class KernelEmbeddingAnalyzer:
     
     def _create_kernel_runtime_graphs(self, kernel_type: str, kernel_data: Dict, 
                                     output_dir: str, valid_dims: List[int]):
-        """Create runtime-related graphs for a kernel type"""
+        """Create IEEE-style runtime graphs for a kernel type"""
         
         # Total duration graph
-        plt.figure(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(8, 5))
         total_durations = [kernel_data[dim]['total_duration'] / 1e6 for dim in valid_dims]
         
-        plt.plot(valid_dims, total_durations, marker='s', linewidth=2, 
-                markersize=8, color='coral', label='Total Duration')
+        ax.plot(valid_dims, total_durations, marker='s', 
+               color='#E74C3C', linewidth=2.5, markersize=8)
         
         for dim, duration in zip(valid_dims, total_durations):
-            plt.text(dim, duration, f'{duration:.2f}ms', ha='center', va='bottom', fontsize=10)
+            ax.text(dim, duration, f'{duration:.2f}ms', ha='center', va='bottom', fontsize=10)
         
-        plt.xlabel('Embedding Dimension', fontsize=12)
-        plt.ylabel('Total Duration (ms)', fontsize=12)
-        plt.title(f'{kernel_type} - Total Duration vs Embedding Dimension', fontsize=14)
-        plt.grid(True, alpha=0.3)
-        plt.xticks(valid_dims)
+        # Add vertical lines for ACE models
+        ax.axvline(x=256, color='red', linestyle='--', alpha=0.7, linewidth=2)
+        ax.text(256, ax.get_ylim()[1] * 0.95, 'ACE', rotation=0, 
+               fontsize=11, ha='center', va='top', color='red', fontweight='bold')
+        
+        ax.axvline(x=384, color='blue', linestyle='--', alpha=0.7, linewidth=2)
+        ax.text(384, ax.get_ylim()[1] * 0.95, 'ACE2', rotation=0, 
+               fontsize=11, ha='center', va='top', color='blue', fontweight='bold')
+        
+        ax.set_xlabel('Embedding Dimension')
+        ax.set_ylabel('Total Duration (ms)')
+        ax.set_xticks(valid_dims)
         
         filepath = os.path.join(output_dir, 'total_duration.png')
-        plt.savefig(filepath, bbox_inches='tight', dpi=300)
+        plt.savefig(filepath, bbox_inches='tight', dpi=300, facecolor='white')
         plt.close()
         
         # Average duration graph
-        plt.figure(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(8, 5))
         avg_durations = [kernel_data[dim]['avg_duration'] / 1e6 for dim in valid_dims]
         
-        plt.plot(valid_dims, avg_durations, marker='^', linewidth=2, 
-                markersize=8, color='green', label='Average Duration')
+        ax.plot(valid_dims, avg_durations, marker='^', 
+               color='#27AE60', linewidth=2.5, markersize=8)
         
         for dim, duration in zip(valid_dims, avg_durations):
-            plt.text(dim, duration, f'{duration:.2f}ms', ha='center', va='bottom', fontsize=10)
+            ax.text(dim, duration, f'{duration:.2f}ms', ha='center', va='bottom', fontsize=10)
         
-        plt.xlabel('Embedding Dimension', fontsize=12)
-        plt.ylabel('Average Duration (ms)', fontsize=12)
-        plt.title(f'{kernel_type} - Average Duration vs Embedding Dimension', fontsize=14)
-        plt.grid(True, alpha=0.3)
-        plt.xticks(valid_dims)
+        # Add vertical lines for ACE models
+        ax.axvline(x=256, color='red', linestyle='--', alpha=0.7, linewidth=2)
+        ax.text(256, ax.get_ylim()[1] * 0.95, 'ACE', rotation=0, 
+               fontsize=11, ha='center', va='top', color='red', fontweight='bold')
+        
+        ax.axvline(x=384, color='blue', linestyle='--', alpha=0.7, linewidth=2)
+        ax.text(384, ax.get_ylim()[1] * 0.95, 'ACE2', rotation=0, 
+               fontsize=11, ha='center', va='top', color='blue', fontweight='bold')
+        
+        ax.set_xlabel('Embedding Dimension')
+        ax.set_ylabel('Average Duration (ms)')
+        ax.set_xticks(valid_dims)
         
         filepath = os.path.join(output_dir, 'average_duration.png')
-        plt.savefig(filepath, bbox_inches='tight', dpi=300)
+        plt.savefig(filepath, bbox_inches='tight', dpi=300, facecolor='white')
         plt.close()
         
     
@@ -313,9 +356,16 @@ class KernelEmbeddingAnalyzer:
         
         print(f"Creating comparative visualizations for {len(all_kernel_types)} kernel types...")
         
-        # Create a comparative graph for each metric
+        # Define standard colors and markers
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+        markers = ['o', 's', '^', 'v', 'D', 'p']
+        
+        # Create compact comparative graphs for each metric
         for metric_id, metric_name in self.metric_map.items():
-            plt.figure(figsize=(14, 8))
+            fig, ax = plt.subplots(figsize=(7, 4.5))
+            
+            # Collect all kernel data for this metric and filter significant ones
+            kernel_metric_data = []
             
             for kernel_type in all_kernel_types:
                 metric_values = []
@@ -328,23 +378,65 @@ class KernelEmbeddingAnalyzer:
                             metric_values.append(metrics[metric_id])
                             valid_dims.append(dim)
                 
-                if metric_values and len(metric_values) >= 2:  # Only plot if we have multiple points
-                    plt.plot(valid_dims, metric_values, marker='o', linewidth=2, 
-                            markersize=6, label=kernel_type[:30] + ("..." if len(kernel_type) > 30 else ""))
+                if metric_values and len(metric_values) >= 2:
+                    # Only include kernels with significant throughput variation or high values
+                    max_val = max(metric_values)
+                    variation = max(metric_values) - min(metric_values)
+                    if max_val > 20 or variation > 10:  # High throughput or significant variation
+                        kernel_metric_data.append((kernel_type, valid_dims, metric_values, max_val))
             
-            # Formatting
-            plt.xlabel('Embedding Dimension', fontsize=12)
-            plt.ylabel('Throughput %', fontsize=12)
-            plt.title(f'All Kernels - {metric_name} vs Embedding Dimension', fontsize=14)
-            plt.grid(True, alpha=0.3)
-            plt.xticks(embed_dims)
-            plt.ylim(0, 100)
-            plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            # Sort by maximum throughput value and take top 6
+            kernel_metric_data.sort(key=lambda x: x[3], reverse=True)
+            top_kernels = kernel_metric_data[:6]
+            
+            # Plot significant kernels
+            for i, (kernel_type, valid_dims, metric_values, _) in enumerate(top_kernels):
+                color = colors[i % len(colors)]
+                marker = markers[i % len(markers)]
+                display_name = self._get_kernel_display_name(kernel_type)
+                
+                ax.plot(valid_dims, metric_values, 
+                       color=color, marker=marker, linewidth=2.0, markersize=5,
+                       label=display_name)
+            
+            # Compact formatting
+            ax.set_xlabel('Embedding Dimension')
+            ax.set_ylabel('Throughput (%)')
+            
+            # Shorter titles
+            title_map = {
+                "SM Issue [Throughput %]": "SM Issue Efficiency",
+                "Tensor Active [Throughput %]": "Tensor Core Utilization", 
+                "Compute Warps in Flight [Throughput %]": "Compute Warps Active",
+                "Unallocated Warps in Active SMs [Throughput %]": "Unallocated Warps",
+                "DRAM Read Bandwidth [Throughput %]": "DRAM Read Bandwidth",
+                "DRAM Write Bandwidth [Throughput %]": "DRAM Write Bandwidth"
+            }
+            
+            ax.set_xticks(embed_dims)
+            ax.set_ylim(0, 100)
+            
+            # Horizontal legend at the top
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), 
+                     ncol=3, fontsize=9, frameon=True, fancybox=False, shadow=False)
+            
+            # Add vertical lines for ACE models (after legend positioning)
+            ax.axvline(x=256, color='red', linestyle='--', alpha=0.6, linewidth=1.5)
+            ax.text(256, ax.get_ylim()[1] * 0.85, 'ACE', rotation=0, 
+                   fontsize=10, ha='center', va='center', color='red', fontweight='bold',
+                   bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='red'))
+            
+            ax.axvline(x=384, color='blue', linestyle='--', alpha=0.6, linewidth=1.5)
+            ax.text(384, ax.get_ylim()[1] * 0.85, 'ACE2', rotation=0, 
+                   fontsize=10, ha='center', va='center', color='blue', fontweight='bold',
+                   bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='blue'))
+            
+            plt.tight_layout()
             
             # Save
             filename = metric_name.replace('[', '').replace(']', '').replace(' ', '_').lower()
             filepath = os.path.join(output_dir, f'comparative_{filename}.png')
-            plt.savefig(filepath, bbox_inches='tight', dpi=300)
+            plt.savefig(filepath, bbox_inches='tight', dpi=300, facecolor='white')
             plt.close()
         
         # Create comparative runtime graphs
@@ -352,14 +444,52 @@ class KernelEmbeddingAnalyzer:
         
         print(f"Comparative visualizations saved in '{output_dir}/'")
     
+    def _get_kernel_display_name(self, kernel_name: str) -> str:
+        """Convert kernel names to shorter, more descriptive names"""
+        name_map = {
+            'EK_CUDAFunctor_direct_copy_kernel_cuda': 'Data Copy',
+            'ampere_cgemm_64x64_nn': 'Complex GEMM',
+            'cutlass_gemm_256x64': 'CUTLASS GEMM', 
+            'ampere_sgemm_128x128_nn': 'SGEMM NN',
+            'ampere_sgemm_128x128_tn': 'SGEMM TN',
+            'VEK_GeluCUDAKernelImpl': 'GELU Activation',
+            'cudnn::bn_fw_tr_1C11_kernel_NCHW': 'BatchNorm',
+            'VEK_CUDAFunctor_add': 'Vector Add',
+            'VEK_AUnaryFunctor': 'Unary Ops',
+            'EK_CUDAFunctor_CUDAFunctor_add': 'Element Add'
+        }
+        
+        for key, display_name in name_map.items():
+            if key in kernel_name:
+                return display_name
+        return kernel_name[:15] + "..." if len(kernel_name) > 15 else kernel_name
+    
     def _create_comparative_runtime_graphs(self, all_results: Dict[int, Dict], 
                                          output_dir: str, all_kernel_types: List[str], 
                                          embed_dims: List[int]):
-        """Create comparative runtime graphs"""
+        """Create IEEE-style comparative runtime graphs"""
         
-        # Total duration comparison
-        plt.figure(figsize=(14, 8))
+        def should_group_as_others(kernel_name: str, durations_ms: List[float]) -> bool:
+            """Determine if a kernel should be grouped into 'Remaining Kernels' based on duration or type"""
+            max_duration = max(durations_ms) if durations_ms else 0
+            # Always group Element Add with others
+            if 'EK_CUDAFunctor_CUDAFunctor_add' in kernel_name:
+                return True
+            # Group small kernels
+            return max_duration < 500  # Group kernels with max duration < 500ms
         
+        # Define standard colors and markers for main kernels
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+        markers = ['o', 's', '^', 'v', 'D', 'p']
+        
+        # Total duration comparison - more compact
+        fig, ax = plt.subplots(figsize=(7, 4.5))
+        
+        # Separate main kernels from others
+        main_kernels = []
+        others_data = {dim: [] for dim in embed_dims}  # Store list of durations for averaging
+        
+        # First pass: identify main kernels and collect others for averaging
         for kernel_type in all_kernel_types:
             durations_ms = []
             valid_dims = []
@@ -371,22 +501,72 @@ class KernelEmbeddingAnalyzer:
                     valid_dims.append(dim)
             
             if durations_ms and len(durations_ms) >= 2:
-                plt.plot(valid_dims, durations_ms, marker='s', linewidth=2, 
-                        markersize=6, label=kernel_type[:30] + ("..." if len(kernel_type) > 30 else ""))
+                if should_group_as_others(kernel_type, durations_ms):
+                    # Add to remaining kernels list for averaging
+                    for dim, duration in zip(valid_dims, durations_ms):
+                        others_data[dim].append(duration)
+                else:
+                    main_kernels.append((kernel_type, valid_dims, durations_ms))
         
-        plt.xlabel('Embedding Dimension', fontsize=12)
-        plt.ylabel('Total Duration (ms)', fontsize=12)
-        plt.title('All Kernels - Total Duration vs Embedding Dimension', fontsize=14)
-        plt.grid(True, alpha=0.3)
-        plt.xticks(embed_dims)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        # Sort main kernels by peak duration
+        main_kernels.sort(key=lambda x: max(x[2]), reverse=True)
+        
+        # Plot main kernels
+        for i, (kernel_type, valid_dims, durations_ms) in enumerate(main_kernels):
+            color = colors[i % len(colors)]
+            marker = markers[i % len(markers)]
+            display_name = self._get_kernel_display_name(kernel_type)
+            
+            ax.plot(valid_dims, durations_ms, 
+                   color=color, marker=marker, linewidth=2.0, markersize=5,
+                   label=display_name)
+        
+        # Plot remaining kernel average if significant
+        others_averages = []
+        for dim in embed_dims:
+            if others_data[dim]:  # If there are kernels in this dimension
+                avg = sum(others_data[dim]) / len(others_data[dim])
+                others_averages.append(avg)
+            else:
+                others_averages.append(0)
+        
+        if max(others_averages) > 10:  # Only show if average remaining kernel > 10ms
+            ax.plot(embed_dims, others_averages, 
+                   color='#95A5A6', marker='x', linewidth=1.5, markersize=4,
+                   label='Remaining Kernel Average', linestyle='--', alpha=0.8)
+        
+        # Compact formatting
+        ax.set_xlabel('Embedding Dimension')
+        ax.set_ylabel('Total Duration (ms)')
+        ax.set_xticks(embed_dims)
+        
+        # Horizontal legend at the top
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), 
+                 ncol=3, fontsize=9, frameon=True, fancybox=False, shadow=False)
+        
+        # Add vertical lines for ACE models (after legend to avoid overlap)
+        ax.axvline(x=256, color='red', linestyle='--', alpha=0.6, linewidth=1.5)
+        ax.text(256, ax.get_ylim()[1] * 0.85, 'ACE', rotation=0, 
+               fontsize=10, ha='center', va='center', color='red', fontweight='bold',
+               bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='red'))
+        
+        ax.axvline(x=384, color='blue', linestyle='--', alpha=0.6, linewidth=1.5)
+        ax.text(384, ax.get_ylim()[1] * 0.85, 'ACE2', rotation=0, 
+               fontsize=10, ha='center', va='center', color='blue', fontweight='bold',
+               bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='blue'))
+        
+        # Tighter layout
+        plt.tight_layout()
         
         filepath = os.path.join(output_dir, 'comparative_total_duration.png')
-        plt.savefig(filepath, bbox_inches='tight', dpi=300)
+        plt.savefig(filepath, bbox_inches='tight', dpi=300, facecolor='white')
         plt.close()
         
-        # Average duration comparison
-        plt.figure(figsize=(14, 8))
+        # Average duration comparison - more compact
+        fig, ax = plt.subplots(figsize=(7, 4.5))
+        
+        # Only plot significant kernels for average duration
+        avg_main_kernels = []
         
         for kernel_type in all_kernel_types:
             avg_durations_ms = []
@@ -399,18 +579,46 @@ class KernelEmbeddingAnalyzer:
                     valid_dims.append(dim)
             
             if avg_durations_ms and len(avg_durations_ms) >= 2:
-                plt.plot(valid_dims, avg_durations_ms, marker='^', linewidth=2, 
-                        markersize=6, label=kernel_type[:30] + ("..." if len(kernel_type) > 30 else ""))
+                max_avg = max(avg_durations_ms)
+                if max_avg > 0.1:  # Only include kernels with avg > 0.1ms
+                    avg_main_kernels.append((kernel_type, valid_dims, avg_durations_ms))
         
-        plt.xlabel('Embedding Dimension', fontsize=12)
-        plt.ylabel('Average Duration (ms)', fontsize=12)
-        plt.title('All Kernels - Average Duration vs Embedding Dimension', fontsize=14)
-        plt.grid(True, alpha=0.3)
-        plt.xticks(embed_dims)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        # Sort by peak average duration
+        avg_main_kernels.sort(key=lambda x: max(x[2]), reverse=True)
+        
+        # Plot main kernels
+        for i, (kernel_type, valid_dims, avg_durations_ms) in enumerate(avg_main_kernels[:6]):  # Top 6 only
+            color = colors[i % len(colors)]
+            marker = markers[i % len(markers)]
+            display_name = self._get_kernel_display_name(kernel_type)
+            
+            ax.plot(valid_dims, avg_durations_ms, 
+                   color=color, marker=marker, linewidth=2.0, markersize=5,
+                   label=display_name)
+        
+        ax.set_xlabel('Embedding Dimension')
+        ax.set_ylabel('Average Duration (ms)')
+        ax.set_xticks(embed_dims)
+        
+        # Horizontal legend at the top
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), 
+                 ncol=3, fontsize=9, frameon=True, fancybox=False, shadow=False)
+        
+        # Add vertical lines for ACE models (after legend positioning)
+        ax.axvline(x=256, color='red', linestyle='--', alpha=0.6, linewidth=1.5)
+        ax.text(256, ax.get_ylim()[1] * 0.85, 'ACE', rotation=0, 
+               fontsize=10, ha='center', va='center', color='red', fontweight='bold',
+               bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='red'))
+        
+        ax.axvline(x=384, color='blue', linestyle='--', alpha=0.6, linewidth=1.5)
+        ax.text(384, ax.get_ylim()[1] * 0.85, 'ACE2', rotation=0, 
+               fontsize=10, ha='center', va='center', color='blue', fontweight='bold',
+               bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='blue'))
+        
+        plt.tight_layout()
         
         filepath = os.path.join(output_dir, 'comparative_average_duration.png')
-        plt.savefig(filepath, bbox_inches='tight', dpi=300)
+        plt.savefig(filepath, bbox_inches='tight', dpi=300, facecolor='white')
         plt.close()
     
     def run_analysis(self):
